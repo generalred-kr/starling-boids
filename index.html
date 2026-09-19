@@ -1,0 +1,2347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보이드 모델 시뮬레이션 (2D · 3D)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f5f8; --panel:#ffffff; --fg:#1b2230; --muted:#5b6575;
+  --line:#d3d8e0; --accent:#2b5bd7; --accent-soft:#e6edfc; --bird:#1b2230; --sky:#eef2f7;
+  --grid1:#c3cad5; --grid2:#dbe0e8; --changed:#b45f06;
+  --bird3:#34435d; --ground:#e3e8ef; --shadowA:0.2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11151c; --panel:#1a2029; --fg:#e7eaf0; --muted:#9ba5b4;
+    --line:#2d3542; --accent:#7fa3ff; --accent-soft:#232d47; --bird:#e7eaf0; --sky:#0f141b;
+    --grid1:#2b3543; --grid2:#1c2430; --changed:#f0a24b;
+    --bird3:#8c9dbb; --ground:#161d27; --shadowA:0.45;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11151c; --panel:#1a2029; --fg:#e7eaf0; --muted:#9ba5b4;
+  --line:#2d3542; --accent:#7fa3ff; --accent-soft:#232d47; --bird:#e7eaf0; --sky:#0f141b;
+  --grid1:#2b3543; --grid2:#1c2430; --changed:#f0a24b;
+  --bird3:#8c9dbb; --ground:#161d27; --shadowA:0.45;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg); overflow:hidden;
+  font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  font-size:14px; line-height:1.5;
+}
+.root{height:100vh; height:100dvh; display:flex; flex-direction:column}
+
+/* 위쪽 표시줄 */
+.top{flex:none; display:flex; align-items:center; gap:12px; padding:8px 14px}
+.top h1{font-size:1.05rem; margin:0; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+.top .grow{flex:1}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden}
+.seg label{margin:0; cursor:pointer}
+.seg input{position:absolute; opacity:0; pointer-events:none}
+.seg span{display:block; padding:4px 20px; font-size:.9rem; background:var(--panel); color:var(--fg)}
+.seg input:checked + span{background:var(--accent); color:#fff; font-weight:700}
+.seg input:focus-visible + span{outline:2px solid var(--accent); outline-offset:-2px}
+.seg label + label span{border-left:1px solid var(--line)}
+button{
+  font:inherit; font-size:.82rem; padding:5px 12px; cursor:pointer;
+  color:var(--fg); background:var(--panel); border:1px solid var(--line); border-radius:4px;
+}
+button{white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button:focus-visible, input:focus-visible, summary:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+/* 본문: 왼쪽 시뮬레이션, 오른쪽 조절 패널 */
+.app{flex:1; min-height:0; display:flex; gap:12px; padding:0 14px 12px}
+.left{flex:1; min-width:0; display:flex; flex-direction:column; gap:8px}
+.stage{
+  position:relative; flex:1; min-height:160px; background:var(--sky);
+  border:1px solid var(--line); border-radius:6px; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+}
+#c2{display:block; flex:none; border:1px solid var(--line)}
+#v3{position:absolute; inset:0}
+#v3 canvas{display:block; width:100%; height:100%; touch-action:none; cursor:grab}
+#v3 canvas:active{cursor:grabbing}
+.stage .msg{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; text-align:center; color:var(--muted)}
+.hud{position:absolute; left:8px; bottom:6px; font-size:.75rem; color:var(--muted); pointer-events:none}
+#c2{display:none}
+body[data-dim="2"][data-r2="canvas"] #c2{display:block}
+body[data-dim="2"][data-r2="canvas"] #v3{display:none}
+body[data-dim="2"] #v3 canvas{cursor:default}
+body[data-dim="2"] .only3d{display:none !important}
+
+.bar{flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:4px 11px; font-size:.83rem}
+.bar b{font-variant-numeric:tabular-nums; font-weight:700}
+.bar .spacer{flex:1}
+.kickgrp{display:inline-flex; align-items:center; gap:4px}
+.kickgrp .klbl{font-size:.8rem; color:var(--muted); margin-right:2px}
+.legend{display:inline-flex; align-items:center; flex-wrap:wrap; gap:2px 6px; color:var(--muted); font-size:.8rem}
+.sw{display:inline-block; width:9px; height:9px; border-radius:50%}
+.sw.focal{background:#e03e3e}
+.sw.near{background:#f2a1a1; margin-left:6px}
+.sw.pred{background:#d9822b; margin-left:6px}
+.sw.roost{background:#2f9e6e; margin-left:6px}
+
+.side{
+  flex:none; width:372px; min-height:0; display:flex; flex-direction:column;
+  background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden;
+}
+body.panel-hidden .side{display:none}
+.tabs{flex:none; display:flex; border-bottom:1px solid var(--line)}
+.tabs button{
+  flex:1; border:0; border-radius:0; background:transparent; padding:8px 4px; font-size:.88rem; color:var(--muted);
+  border-bottom:2px solid transparent;
+}
+.tabs button[aria-pressed="true"]{color:var(--accent); font-weight:700; border-bottom-color:var(--accent); background:var(--accent-soft)}
+.tabbody{flex:1; min-height:0; overflow-y:auto; padding:10px 12px 8px}
+.modeNote{margin:0 0 6px; font-size:.78rem; color:var(--muted)}
+.modeNote.flash{color:var(--changed)}
+fieldset{border:0; padding:0; margin:0 0 7px; min-width:0}
+legend{font-size:.82rem; font-weight:700; padding:0; margin-bottom:2px}
+.field{display:flex; align-items:center; gap:2px 10px; margin:0 0 4px; flex-wrap:wrap}
+.field .fl{font-size:.82rem; font-weight:700; min-width:58px}
+.radios{display:flex; flex-wrap:wrap; gap:4px 16px; font-size:.86rem}
+.radios.col{flex-direction:column; gap:4px}
+.radios label{display:flex; gap:6px; align-items:center; cursor:pointer; flex-wrap:wrap}
+.radios .note{color:var(--muted); font-size:.78rem}
+.inline-num{
+  width:54px; font:inherit; font-size:.85rem; padding:1px 4px; color:var(--fg);
+  background:var(--bg); border:1px solid var(--line); border-radius:4px;
+}
+.grp{margin:0 0 4px}
+.grp h4{margin:6px 0 3px; font-size:.76rem; font-weight:700; color:var(--muted)}
+.rows{display:grid; grid-template-columns:1fr 1fr; gap:5px 12px}
+.rows.one{grid-template-columns:1fr}
+.ctl{display:grid; grid-template-columns:minmax(0,1fr) 60px 16px; align-items:center; gap:4px}
+.ctl.hidden, .grp.hidden{display:none}
+.lab{font-size:.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; user-select:none; -webkit-user-select:none; cursor:ew-resize}
+.rows.one .lab{cursor:default}
+.ctl input[type=number]{
+  width:60px; font:inherit; font-size:.82rem; padding:2px 4px; color:var(--fg);
+  background:var(--bg); border:1px solid var(--line); border-radius:4px;
+}
+.ctl input.changed{border-color:var(--changed); color:var(--changed); font-weight:700}
+.ctl .rs{
+  width:16px; height:16px; padding:0; border:0; background:transparent; font-size:.8rem; line-height:1;
+  color:var(--changed); visibility:hidden;
+}
+.ctl .rs.on{visibility:visible}
+.tip{margin:6px 0; font-size:.74rem; color:var(--muted)}
+#resetAll{width:100%; margin-top:6px}
+
+/* 설명 탭 */
+.explain h2{font-size:1rem; margin:0 0 6px}
+.explain > p{margin:0 0 8px; font-size:.86rem; color:var(--muted)}
+details{border:1px solid var(--line); border-radius:6px; margin:0 0 6px; padding:0; background:var(--panel)}
+summary{cursor:pointer; padding:7px 10px; font-weight:700; font-size:.88rem}
+details > div{padding:0 12px 10px; font-size:.86rem}
+details p{margin:6px 0}
+details ul, details ol{margin:5px 0; padding-left:18px}
+details li{margin:4px 0}
+dl{margin:4px 0}
+dt{font-weight:700; margin-top:8px}
+dd{margin:1px 0 0 0}
+.small{font-size:.8rem; color:var(--muted)}
+code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; background:var(--bg); padding:1px 4px; border-radius:3px}
+
+/* 좁은 화면: 위에 시뮬레이션, 아래에 패널 */
+@media (max-width: 880px){
+  .app{flex-direction:column}
+  .left{flex:none; height:47vh; height:47dvh}
+  .side{flex:1; width:auto}
+  .top{gap:8px; padding:6px 10px}
+  .top h1{font-size:.92rem}
+  .seg span{padding:4px 14px}
+  .top .grow{min-width:0}
+}
+@media (max-width: 880px) and (max-height: 620px){
+  .left{height:42dvh}
+}
+</style>
+</head>
+<body data-dim="2" data-tab="basic" data-r2="gl">
+<div class="root">
+  <header class="top">
+    <h1>보이드 모델 시뮬레이션</h1>
+    <div class="seg" role="radiogroup" aria-label="보기 방식">
+      <label><input type="radio" name="dim" value="2" checked><span>2D</span></label>
+      <label><input type="radio" name="dim" value="3"><span>3D</span></label>
+    </div>
+    <span class="grow"></span>
+    <button id="togglePanel" type="button" aria-pressed="false">설정 숨기기</button>
+  </header>
+
+  <div class="app">
+    <section class="left">
+      <div class="stage" id="stage">
+        <canvas id="c2" aria-label="2차원 시뮬레이션 화면"></canvas>
+        <div id="v3"></div>
+        <div class="hud only3d">드래그: 회전 · 휠/두 손가락: 확대·축소</div>
+      </div>
+      <div class="bar">
+        <span>정렬도 <b id="pol">0.00</b></span>
+        <span>이웃 <b id="nbr" title="새 한 마리가 이웃으로 보는 새의 평균 수">0</b></span>
+        <span title="포식자가 목표 새에게 접근한 횟수">접근 <b id="hits">0</b></span>
+        <span id="dealignBox" hidden title="최근 1초 동안 무리 평균 방향에서 벗어난 시간의 비율을 약 3초 이동평균한 값입니다. 바깥은 옆쪽 가장자리 10%의 새, 안쪽은 안쪽 50%의 새의 평균입니다.">이탈 바깥 <b id="dealignOuter">–</b> 안쪽 <b id="dealignInner">–</b></span>
+        <span title="화면이 초당 몇 번 갱신되는지 보여 줍니다. 낮으면 개체 수를 줄이세요"><b id="fps">–</b> fps</span>
+        <span class="legend"><i class="sw focal"></i>선택 개체 <i class="sw near"></i>가까운 7마리 <i class="sw pred"></i>포식자 <i class="sw roost only3d"></i><span class="only3d">중심점</span></span>
+        <span class="spacer"></span>
+        <span class="kickgrp" title="선택 개체 근처(100 이내)의 새들의 방향을 120도 돌립니다. 왼쪽·오른쪽은 새가 향한 방향 기준입니다(3D는 위에서 내려다본 기준)."><span class="klbl">방향 돌리기</span><button id="kickL" type="button">↶ 왼쪽</button><button id="kickR" type="button">오른쪽 ↷</button></span>
+        <button id="pause" type="button">일시정지</button>
+        <button id="reset" type="button">초기화</button>
+      </div>
+    </section>
+
+    <aside class="side" id="side">
+      <div class="tabs" role="group" aria-label="설정 보기">
+        <button type="button" data-tab="basic" aria-pressed="true" title="기본값으로 실행합니다">Basic</button>
+        <button type="button" data-tab="expert" aria-pressed="false" title="변수 값을 직접 바꿉니다">Expert</button>
+        <button type="button" data-tab="help" aria-pressed="false">설명</button>
+      </div>
+      <div class="tabbody">
+        <div id="ctlArea">
+          <p class="modeNote" id="modeNote"></p>
+
+          <fieldset>
+            <legend>이웃 선택 방식</legend>
+            <div class="radios col">
+              <label><input type="radio" name="mode" value="radius" checked> 보이드 방식 <span class="note">반경 안의 이웃 전부</span></label>
+              <label><input type="radio" name="mode" value="knn"> 가장 가까운 N마리 <span class="note">실측 방식</span> · N =
+                <input type="number" id="kInput" class="inline-num" min="1" max="20" step="1" value="7" aria-label="이웃 수 N"></label>
+            </div>
+          </fieldset>
+          <div class="field">
+            <span class="fl">정렬 방식</span>
+            <div class="radios">
+              <label><input type="radio" name="align" value="inertial" checked> 관성 모델</label>
+              <label><input type="radio" name="align" value="basic"> 기본</label>
+            </div>
+          </div>
+          <div class="field">
+            <span class="fl">옵션</span>
+            <div class="radios">
+              <label><input type="checkbox" id="predOn"> 포식자</label>
+              <label title="화면 해상도를 1배로 낮추고 3D 그림자를 끕니다. 새가 많거나 컴퓨터가 느려 화면이 끊길 때 켜세요."><input type="checkbox" id="perfOn"> 성능 우선</label>
+              <label title="각 새가 최근 1초 동안 무리 평균 방향에서 벗어난 시간의 비율을 색으로 보입니다. 초록일수록 자주 벗어납니다(Attanasi 등 2015, 그림 6b)."><input type="checkbox" id="dealignOn"> 이탈도 색</label>
+              <label title="무리의 옆쪽 가장자리에서 시작한 방향 전환이 무리 전체로 퍼지게 합니다. 전환 중인 새는 노란색으로 보입니다."><input type="checkbox" id="spontOn"> 자발적 전환</label>
+              <label class="only3d"><input type="checkbox" id="roostOn"> 중심점 유인</label>
+            </div>
+          </div>
+          <div class="rows one" id="selRows" style="margin-bottom:7px"></div>
+          <p class="tip" id="nWarn" hidden style="margin:-3px 0 7px"></p>
+          <div class="field only3d">
+            <span class="fl">3D 화면</span>
+            <div class="radios">
+              <label><input type="checkbox" id="follow" checked> 무리 따라가기</label>
+              <label><input type="checkbox" id="autoRot"> 자동 회전</label>
+              <label title="새의 그림자를 바닥에 그려 높이를 보기 쉽게 합니다"><input type="checkbox" id="shadowOn" checked> 그림자</label>
+              <label title="초기화할 때 적용됩니다"><input type="checkbox" id="alignedStart" checked> 정렬된 시작</label>
+            </div>
+          </div>
+
+          <div id="expertArea" hidden>
+            <p class="tip">숫자 칸에 입력하거나 ▲▼·↑↓ 키를 쓰고, 변수 이름을 좌우로 드래그해도 됩니다. 주황색은 바뀐 값이며 ↺로 되돌립니다.</p>
+            <div id="groups"></div>
+            <button id="resetAll" type="button">전체 기본값으로 되돌리기</button>
+          </div>
+        </div>
+
+        <div id="helpArea" class="explain" hidden>
+          <h2>설명</h2>
+          <p>새들이 서로 주변만 보고 움직일 때 무리가 어떻게 만들어지는지 보는 시뮬레이션입니다. 찌르레기 군무의 특징 몇 가지를 옵션으로 넣었습니다.</p>
+
+    <details open><summary>이 시뮬레이션은 무엇을 보여 주나요</summary><div>
+      <p>화면의 삼각형 하나가 새 한 마리입니다. 각 새는 자기 주변의 새만 보고 속도와 방향을 스스로 정합니다. 무리 전체를 조종하는 규칙은 없는데도, 새들이 모여서 같은 방향으로 움직이는 무리가 생깁니다. 이런 방식을 <b>보이드(boids) 모델</b>이라고 하며, 1986년 Craig Reynolds가 만들었습니다.</p>
+      <p>이 페이지는 찌르레기 무리(군무)를 흉내 내기 위해, 실제 관찰 연구에서 알려진 특징 몇 가지를 옵션으로 넣었습니다. 실제 새의 움직임을 정확히 재현하는 모델은 아니고, 원리를 눈으로 확인하기 위해 단순하게 만든 모델입니다.</p>
+      <p>위쪽의 <b>2D / 3D</b> 버튼으로 평면과 3차원 화면을 바꿔 볼 수 있습니다. 3D 화면은 드래그로 회전하고, 휠이나 두 손가락 벌리기로 확대·축소합니다.</p>
+      <p><b>Basic</b>은 기본값으로 실행하는 화면이고, <b>Expert</b>는 변수 값을 직접 바꾸는 화면입니다. Expert에서 바꾼 값은 Basic으로 돌아오면 기본값으로 되돌아갑니다. 이웃 방식, 정렬 방식, 포식자 같은 선택 항목과 개체 수는 Basic에서도 바꿀 수 있습니다.</p>
+    </div></details>
+
+    <details open><summary>새 한 마리가 따르는 세 가지 규칙</summary><div>
+      <ul>
+        <li><b>분리</b>: 너무 가까운 이웃에게서 멀어집니다. 서로 부딪히지 않게 하는 규칙입니다.</li>
+        <li><b>정렬</b>: 이웃이 향하는 방향에 자기 방향을 맞춥니다.</li>
+        <li><b>응집</b>: 이웃들이 모여 있는 쪽으로 다가갑니다.</li>
+      </ul>
+      <p>세 규칙은 각각 <b>가중치</b>라는 숫자로 세기를 조절합니다. 새는 세 규칙이 내는 힘을 더한 만큼 속도와 방향을 바꿉니다. 가중치를 올리면 그 규칙의 영향이 커집니다.</p>
+      <p>가중치를 크게 한다고 무리가 더 잘 만들어지는 것은 아닙니다. 규칙끼리 서로 반대쪽으로 힘을 주기 때문에, 한 규칙만 지나치게 키우면 무리가 흩어지거나 뭉쳐서 움직임이 이상해질 수 있습니다.</p>
+    </div></details>
+
+    <details><summary>이웃을 정하는 두 가지 방식</summary><div>
+      <p>새가 "이웃"으로 보는 대상을 정하는 방식이 두 가지 있습니다.</p>
+      <ul>
+        <li><b>보이드 방식 (기본)</b>: 정해진 거리(인지 반경) 안에 있는 새를 모두 이웃으로 봅니다. 새가 빽빽한 곳에서는 이웃이 수십~수백 마리가 될 수 있고, 이웃이 많을수록 계산이 오래 걸립니다.</li>
+        <li><b>가장 가까운 N마리</b>: 거리와 관계없이 가장 가까운 N마리(기본 7)만 이웃으로 봅니다. 찌르레기 무리를 관찰한 연구(Ballerini 등, 2008)에서 새 한 마리가 거리와 관계없이 가장 가까운 6~7마리와 상호작용한다고 보고되어 이 방식을 넣었습니다. 새가 빽빽하든 드물든 이웃 수가 일정합니다.</li>
+      </ul>
+      <p>화면 아래쪽의 "이웃" 값으로 실제 이웃이 몇 마리인지 볼 수 있습니다. N을 너무 작게(예: 1) 하면 정렬이 잘 되지 않는 경우가 있습니다.</p>
+    </div></details>
+
+    <details><summary>정렬 방식: 관성 모델과 기본</summary><div>
+      <ul>
+        <li><b>관성 모델 (기본)</b>: 새가 방향을 바꾸는 데도 관성이 있습니다. 이웃과 방향이 다르면 회전하려는 힘이 생기고, 이 힘으로 방향이 서서히 바뀝니다. 그래서 이웃을 곧바로 따라가지 않고 조금 늦게 바뀌며, 지나쳤다가 돌아오는 흔들림이 생기기도 합니다. 찌르레기 무리에서 방향 변화가 무리 속으로 전달되는 현상을 설명하려고 제안된 관성 스핀 모델(Cavagna 등)을 단순하게 구현한 것이며, 실제 연구 수치에 맞춘 것은 아닙니다.</li>
+        <li><b>기본</b>: 이웃의 평균 속도를 향해 곧바로 조정합니다. 관성이 없어서 방향이 더 빨리 맞춰집니다.</li>
+      </ul>
+      <p>관성 모델에서는 <b>관성 χ</b>와 <b>감쇠 η</b>를 조절할 수 있습니다. χ를 올리면 방향이 더 늦게 바뀝니다. η를 올리면 흔들림이 빨리 줄고, 내리면 오래 흔들립니다.</p>
+    </div></details>
+
+    <details><summary>포식자</summary><div>
+      <p>"포식자"를 켜면 주황색 포식자가 나타납니다.</p>
+      <ul>
+        <li>포식자는 가장 가까운 새를 골라, 그 새가 앞으로 있을 위치를 향해 쫓아갑니다. 속도는 새의 최대 속도의 1.3배(기본)이지만 한 번에 꺾을 수 있는 각도가 제한되어 있어서 급하게 방향을 바꾸지는 못합니다.</li>
+        <li>목표 새에게 10 이내로 다가가면 "접근" 횟수가 1 늘고, 포식자는 무리에서 잠시 물러났다가 다시 쫓습니다. 새를 잡아서 없애지는 않습니다.</li>
+        <li>포식자 감지 거리 안으로 들어온 새는 포식자에게서 멀어지려 합니다. 가까울수록 더 세게 도망치고, 이때는 최대 속도의 1.3배까지 낼 수 있습니다.</li>
+        <li>포식자를 본 새가 이웃에게 따로 알리지는 않습니다. 도망치는 반응은 정렬·응집 규칙을 통해서만 주변 새에게 퍼집니다.</li>
+      </ul>
+    </div></details>
+
+    <details class="only3d"><summary>중심점 유인 (3D 전용)</summary><div>
+      <p>3D 화면에서 "중심점 유인"을 켜면 구역 중심에 초록색 표시가 나타납니다. 중심점에서 <b>유인 시작 거리</b>보다 멀리 있는 새는 중심점 쪽으로 향하는 힘을 받고, 멀어질수록 힘이 세집니다. 그 결과 무리가 중심점 주변을 오가며 방향을 바꾸게 됩니다. 새들이 잠자리 위를 맴도는 모습을 단순하게 흉내 낸 것입니다.</p>
+    </div></details>
+
+    <details><summary>화면 표시를 읽는 법</summary><div>
+      <ul>
+        <li><b>빨간 삼각형(크게)</b>: 선택 개체입니다. 0번 새 한 마리를 고정해서 표시합니다.</li>
+        <li><b>연한 빨간 삼각형</b>: 선택 개체와 가장 가까운 7마리입니다. 이웃 방식과 관계없이 항상 7마리를 표시합니다. "가장 가까운 N마리" 방식에서 N이 7이면 실제로 영향을 주는 이웃과 같습니다.</li>
+        <li><b>정렬도(0~1)</b>: 모든 새의 진행 방향을 평균낸 값입니다. 1에 가까우면 거의 모두 같은 방향으로 움직이고, 0에 가까우면 방향이 제각각입니다.</li>
+        <li><b>이웃</b>: 새 한 마리가 이웃으로 보는 새의 평균 수입니다.</li>
+        <li><b>접근</b>: 포식자가 목표 새에게 접근한 횟수입니다. 초기화하면 0으로 돌아갑니다.</li>
+        <li><b>fps</b>: 화면이 초당 몇 번 갱신되는지입니다. 낮을수록 화면이 끊깁니다. 새를 많이 늘렸을 때 참고하세요.</li>
+        <li><b>방향 돌리기 (↶ 왼쪽 / 오른쪽 ↷)</b>: 선택 개체 근처의 새들의 방향을 강제로 120도 돌립니다. 방향 변화가 무리로 퍼지는 모습을 볼 때 씁니다. 왼쪽·오른쪽은 새가 향한 방향을 기준으로 하며, 3D에서는 위에서 내려다본 기준입니다. 방향 변화는 돌린 쪽으로 퍼지므로 두 버튼을 번갈아 눌러 비교해 보세요.</li>
+        <li><b>노란 삼각형</b>: 자발적 전환 중인 새입니다(옵션을 켰을 때). 전환이 시작된 가장자리에서 무리 안으로 퍼지는 모습을 볼 수 있습니다.</li>
+        <li><b>이탈도 색</b> (옵션): 각 새가 최근 1초 동안 무리 평균 방향에서 벗어난 시간의 비율을 색으로 보입니다. 초록일수록 자주 벗어납니다. 아래 표시줄의 "이탈 바깥/안쪽"은 옆쪽 가장자리 10%의 새와 안쪽 50%의 새의 평균값(약 3초 이동평균)입니다. 켠 직후 몇 초는 0.5 근처에서 시작하므로 잠시 기다려야 합니다. Attanasi 등(2015)이 실제 찌르레기 무리에서 측정한 이탈 시간과 같은 방식의 값입니다.</li>
+        <li><b>화면 가장자리</b>: 새가 밖으로 나가지 않도록, 2D는 화면 가장자리에서, 3D는 타원체 모양의 구역 가장자리에서 안쪽으로 방향을 틉니다.</li>
+      </ul>
+    </div></details>
+
+    <details><summary>변수 설명</summary><div>
+      <dl id="varlist"></dl>
+    </div></details>
+
+    <details><summary>해 볼 만한 실험</summary><div>
+      <ol>
+        <li><b>정렬 가중치를 0으로</b> 내려 보세요. 새들이 방향을 맞추지 않아 정렬도가 크게 낮아지고 무리가 넓게 퍼집니다.</li>
+        <li><b>분리 가중치를 바꿔</b> 보세요. 낮추면 새들이 겹치고, 높이면 새 사이 간격이 넓어집니다.</li>
+        <li><b>응집 가중치를 0으로</b> 내려 보세요. 무리 크기와 정렬도가 어떻게 변하는지 봅니다. 결과는 2D와 3D, 이웃 방식에 따라 다르게 나타납니다.</li>
+        <li><b>이웃 방식을 "가장 가까운 N마리"로</b> 바꾸고 N을 1, 7, 20으로 바꿔 보세요.</li>
+        <li><b>포식자를 켜고 회피 세기를 0과 5로</b> 비교해 보세요. 2D에서는 회피 세기가 클수록 접근 횟수가 줄어듭니다. 3D에서는 접근 횟수보다, 포식자가 있을 때 무리가 흩어지고 정렬도가 낮아지는 변화가 더 뚜렷합니다.</li>
+        <li><b>"방향 돌리기"의 왼쪽·오른쪽을 관성 모델과 기본 방식에서 각각</b> 눌러 보세요. 주변 새들의 반응이 나타나는 속도와 방식을 비교해 봅니다.</li>
+        <li class="only3d"><b>(3D) 중심점 유인을 켜고</b> 유인 거리를 바꿔 보세요.</li>
+      </ol>
+    </div></details>
+
+    <details><summary>수식으로 보기 (선택)</summary><div>
+      <p class="small">수식이 필요 없는 분은 건너뛰셔도 됩니다.</p>
+      <p>새 한 마리의 속도 변화 = <code>w_sep × 분리 + w_ali × 정렬 + w_coh × 응집</code> (여기에 포식자 회피, 경계·중심점 힘이 더해집니다). 세 힘은 모두 "원하는 속도 − 현재 속도"를 최대 힘(0.1) 이하로 자른 값입니다. 분리는 분리 거리 안의 이웃에서 멀어지는 방향, 정렬은 이웃 평균 속도 방향, 응집은 이웃 평균 위치 방향을 원하는 방향으로 삼습니다.</p>
+      <p>관성 모델에서는 정렬 항 대신 회전 토크를 씁니다. 토크 τ는 자기 방향과 이웃 방향의 차이(2D에서는 sin값의 평균, 3D에서는 외적의 평균)이고, 회전 상태 s는 <code>s ← s + J·τ − (η/χ)·s</code>로 갱신됩니다(J = 0.06 × w_ali). 각속도는 ω = s/χ이며 프레임당 0.35 rad을 넘지 않게 제한하고, 속도 방향을 ω만큼 회전시킵니다. 이 방식은 정렬 항이 속도를 최대 속도 쪽으로 밀어주지 않으므로, 속도를 최대 속도 쪽으로 서서히 되돌리는 보정을 함께 씁니다.</p>
+      <p>정렬도 = 새들의 진행 방향(단위벡터)을 모두 더한 벡터의 크기 ÷ 새의 수.</p>
+    </div></details>
+
+    <details><summary>실제 무리와 비교한 결과 (Cavagna 그룹 논문)</summary><div>
+      <ul>
+        <li><b>가장자리 새가 더 자주 벗어남</b>: 실제 무리에서는 옆쪽 가장자리의 새일수록 무리 평균 방향에서 자주 벗어납니다(Attanasi 등, 2015). 이 시뮬레이션에서도 정렬도가 0.85 이상인 때의 측정값이 2D·3D 모두 바깥 10%는 약 0.65~0.81, 안쪽 50%는 약 0.40~0.44로 나왔습니다(500마리, 이웃·정렬 방식 5가지 조합). "이탈도 색"을 켜면 볼 수 있습니다. 이 결과를 위한 규칙을 따로 넣지 않았는데도 나타났습니다.</li>
+        <li><b>무리 모양</b>: 실제 무리는 곧게 날 때 가장 긴 축이 이동 방향과 수직에 가깝습니다. 실제 무리는 곧게 날 때 이동 방향과 가장 긴 축의 |cos|가 대개 0.5 미만입니다. 이 시뮬레이션에서 정렬도가 0.8 이상인 구간(3D, 500마리)을 잰 값은 "가장 가까운 N마리 + 관성 모델"에서 N=7일 때 0.44, N=12일 때 0.20이었고, 보이드 방식은 0.52, 기본 정렬은 0.57이었습니다. 표본이 30여 개 구간이라 대략적인 값입니다.</li>
+        <li><b>속도 변화</b>: 실제 무리의 개체 속도 변화는 평균 속도 대비 분산 약 0.005입니다(Bialek 등, 2014). 이 시뮬레이션의 기본값은 약 0.002로 같은 자릿수입니다.</li>
+        <li><b>이웃 상호작용만으로는 재현되지 않은 것</b>: 가장자리의 소수가 시작한 방향 전환이 무리 전체로 퍼지는 과정입니다. 소수의 새만 돌리면 무리 평균 방향은 그 새들의 비율만큼만 바뀝니다(500마리 중 10마리를 60도 돌리면 약 1도). 그래서 "자발적 전환" 옵션은 전환 신호가 퍼지는 속도와 새들의 회전 속도를 미리 정해 두는 방식으로 넣었습니다.</li>
+      </ul>
+    </div></details>
+
+    <details><summary>자발적 전환 (옵션, 실험)</summary><div>
+      <p>실제 찌르레기 무리는 포식자가 없어도 방향을 자주 바꿉니다. 이 옵션은 그 변화를 단순하게 흉내 냅니다. 논문의 공식이 아니라 관찰을 옮긴 규칙입니다.</p>
+      <ol>
+        <li>무작위 시각에, 무리 진행 방향의 옆쪽 가장자리에 있는 서로 가까운 새 10마리 안팎이 안쪽으로 돌기 시작합니다(Attanasi 등, 2015).</li>
+        <li>다른 새는 시작 지점에서의 거리에 비례해 늦게, 같은 방향으로 돌기 시작합니다. 전환 신호가 퍼지는 속도는 새의 최대 속도의 2.5배로 정했습니다. 실제 무리에서 방향 변화 정보가 일정한 속도로 퍼진다는 관찰(Attanasi 등, 2014)을 옮긴 것으로, 값은 제가 정했습니다.</li>
+        <li>모든 새가 같은 회전 속도로 정해진 각도만큼만 돌기 때문에 새마다 같은 반지름의 경로를 따라갑니다. 실제 무리도 같은 반지름의 경로로 돕니다.</li>
+      </ol>
+      <p>전환이 시작되는 시각과 각각의 새가 돌기 시작하는 시각은 미리 정해 둔 것이며, 새들 사이의 상호작용에서 나온 결과가 아닙니다. 전환 중에도 분리·정렬·응집 규칙은 그대로 작용합니다.</p>
+      <p>Expert에서 평균 간격과 각도를 바꿀 수 있습니다. 3D 500마리 시험(보이드 방식)에서 평균 간격 6초, 각도 90도로 하면 무리 중심이 같은 경로를 왕복하는 규칙성이 줄었습니다. 반복 정도가 0.99에서 0.52로 낮아졌고, 정렬도가 0.6 미만인 시간은 18%에서 5%로 줄었습니다.</p>
+    </div></details>
+
+    <details><summary>알아둘 점과 한계</summary><div>
+      <ul>
+        <li>실제 새의 비행 역학(회전할 때 몸이 기울어지는 것, 속도 변화), 시야 제한, 바람은 넣지 않았습니다.</li>
+        <li>기본값은 무리가 안정적으로 보이도록 정한 값이며, 실제 찌르레기 측정값과 맞춰서 검증한 것이 아닙니다.</li>
+        <li>새는 최대 10000마리까지 늘릴 수 있지만, 많을수록 계산이 오래 걸려 화면이 느려집니다. 특히 "보이드 방식"에서 반경이 크고 새가 많으면 이웃이 수백 마리가 되어 크게 느려집니다. 새를 많이 늘릴 때는 "가장 가까운 N마리" 방식이나 작은 반경을 권합니다. 화면 아래의 fps 값이 낮아지면(대략 20 이하) 개체 수를 줄이세요.</li>
+        <li>2D는 가로 960 × 세로 540 크기의 고정된 공간에서 계산하고 화면 크기에 맞춰 확대·축소해 보여 줍니다. 3D는 타원체(반지름 520 × 260 × 420) 구역 안에서 움직이며, 2D와 3D는 각각 따로 계산합니다.</li>
+      </ul>
+    </div></details>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+/* ===== 2차원 시뮬레이션 핵심 (렌더링과 무관) ===== */
+(function(global){
+  global.createSim2D = function(){
+    var MAX = 10000;
+    var W = 800, H = 500;
+    var P = {
+      wSep:1.5, wAli:1.0, wCoh:1.0,
+      n:500, speed:3.5, force:0.1,
+      k:7, radius:40, sepDist:18,
+      mode:'radius', align:'inertial', chi:10, eta:0.4,
+      pred:false, wFlee:5, predR:120, predSpeed:1.3,
+      spont:false, spontEvery:6, spontN:10, spontAngle:90
+    };
+    var x = new Float32Array(MAX), y = new Float32Array(MAX);
+    var vx = new Float32Array(MAX), vy = new Float32Array(MAX);
+    var nvx = new Float32Array(MAX), nvy = new Float32Array(MAX);
+    var spin = new Float32Array(MAX);
+    var nIdx = new Int32Array(MAX);
+    var nDx = new Float32Array(MAX), nDy = new Float32Array(MAX), nD2 = new Float32Array(MAX);
+    var count = 0;
+    var FOCAL = 0, FOCAL_N = 7;
+    var mark = new Uint8Array(MAX);
+    var fIdx = new Int32Array(FOCAL_N), fD2 = new Float32Array(FOCAL_N);
+    var avgNbr = 0, pol = 0;
+
+    /* ---- 포식자 ---- */
+    var PRED_TURN = 0.05, PRED_CATCH = 10, PRED_REST = 90, PRED_TIMEOUT = 240;
+    var pred = {x:0, y:0, vx:0, vy:0, state:'hunt', t:0, target:-1, hits:0};
+
+    function resetPred(){
+      pred.x = 30; pred.y = H / 2;
+      pred.vx = P.speed * P.predSpeed; pred.vy = 0;
+      pred.state = 'hunt'; pred.t = 0; pred.target = -1; pred.hits = 0;
+    }
+
+    function updatePredator(n){
+      if(!P.pred || n < 1) return;
+      var ps = P.speed * P.predSpeed;
+      var desx = null, desy = 0;
+      pred.t++;
+      if(pred.state === 'hunt'){
+        if(pred.target < 0 || pred.target >= n){
+          var bd = 1e18, bi = 0;
+          for(var i = 0; i < n; i++){
+            var ddx = x[i] - pred.x, ddy = y[i] - pred.y, dd = ddx * ddx + ddy * ddy;
+            if(dd < bd){ bd = dd; bi = i; }
+          }
+          pred.target = bi; pred.t = 0;
+        }
+        var tg = pred.target;
+        var dx = x[tg] - pred.x, dy = y[tg] - pred.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if(d < PRED_CATCH){ pred.hits++; pred.state = 'rest'; pred.t = 0; pred.target = -1; }
+        else if(pred.t > PRED_TIMEOUT){ pred.state = 'rest'; pred.t = 0; pred.target = -1; }
+        else {
+          var lead = Math.min(30, d / ps);
+          desx = x[tg] + vx[tg] * lead - pred.x;
+          desy = y[tg] + vy[tg] * lead - pred.y;
+        }
+      } else {
+        if(pred.t > PRED_REST){ pred.state = 'hunt'; pred.t = 0; pred.target = -1; }
+        var mx = 0, my = 0;
+        for(var q = 0; q < n; q++){ mx += x[q]; my += y[q]; }
+        desx = pred.x - mx / n; desy = pred.y - my / n;
+      }
+      if(desx === null){ desx = pred.vx; desy = pred.vy; }
+      // 벽 쪽으로 향하며 선회 반경 이내로 가까워지면 화면 중앙 쪽으로 향한다
+      var wm = Math.min(2 * ps / PRED_TURN, Math.min(W, H) / 2 - 10);
+      if((pred.x < wm && pred.vx < 0) || (pred.x > W - wm && pred.vx > 0) ||
+         (pred.y < wm && pred.vy < 0) || (pred.y > H - wm && pred.vy > 0)){
+        desx = W / 2 - pred.x; desy = H / 2 - pred.y;
+      }
+      // 회전 속도 제한
+      var cur = Math.atan2(pred.vy, pred.vx), want = Math.atan2(desy, desx);
+      var diff = want - cur;
+      while(diff > Math.PI) diff -= 2 * Math.PI;
+      while(diff < -Math.PI) diff += 2 * Math.PI;
+      if(diff > PRED_TURN) diff = PRED_TURN; else if(diff < -PRED_TURN) diff = -PRED_TURN;
+      cur += diff;
+      pred.vx = Math.cos(cur) * ps; pred.vy = Math.sin(cur) * ps;
+      pred.x += pred.vx; pred.y += pred.vy;
+      if(pred.x < 0){ pred.x = 0; pred.vx = Math.abs(pred.vx); }
+      else if(pred.x > W){ pred.x = W; pred.vx = -Math.abs(pred.vx); }
+      if(pred.y < 0){ pred.y = 0; pred.vy = Math.abs(pred.vy); }
+      else if(pred.y > H){ pred.y = H; pred.vy = -Math.abs(pred.vy); }
+    }
+
+    /* ---- 2차원 균일 격자 ---- */
+    var cellStart = new Int32Array(1), cellFill = new Int32Array(1);
+    var cellItems = new Int32Array(MAX), cellOf = new Int32Array(MAX);
+    var gCs = 1, gCols = 1, gRows = 1, gMaxR = 1;
+
+    function buildGrid(n, knn){
+      gCs = knn ? Math.max(10, Math.sqrt(W * H / Math.max(n, 1))) : Math.max(P.radius, 10);
+      gCols = Math.max(1, Math.ceil(W / gCs));
+      gRows = Math.max(1, Math.ceil(H / gCs));
+      gMaxR = Math.max(gCols, gRows);
+      var cells = gCols * gRows;
+      if(cellStart.length < cells + 1){
+        cellStart = new Int32Array(cells + 1);
+        cellFill = new Int32Array(cells + 1);
+      }
+      cellStart.fill(0, 0, cells + 1);
+      for(var i = 0; i < n; i++){
+        var cxi = Math.min(gCols - 1, Math.max(0, Math.floor(x[i] / gCs)));
+        var cyi = Math.min(gRows - 1, Math.max(0, Math.floor(y[i] / gCs)));
+        var cc = cyi * gCols + cxi;
+        cellOf[i] = cc;
+        cellStart[cc + 1]++;
+      }
+      for(var c2 = 0; c2 < cells; c2++) cellStart[c2 + 1] += cellStart[c2];
+      for(var c3 = 0; c3 < cells; c3++) cellFill[c3] = cellStart[c3];
+      for(var i2 = 0; i2 < n; i2++) cellItems[cellFill[cellOf[i2]]++] = i2;
+    }
+
+    // i번 개체의 이웃을 nIdx/nDx/nDy/nD2에 채우고 개수를 반환
+    function findNeighbors(i, knn, k, R2){
+      var cnt = 0;
+      var xi = x[i], yi = y[i];
+      var gc = cellOf[i];
+      var gcx = gc % gCols, gcy = (gc / gCols) | 0;
+      if(knn){
+        // 자기 칸에서 바깥 고리 방향으로 넓혀가며 탐색한다.
+        // r번째 고리까지 탐색하면 거리 r*칸크기 이내의 개체는 모두 확인된 것이므로,
+        // k번째 이웃 거리가 그 안에 들어오면 탐색을 멈춘다.
+        for(var rr = 0; ; rr++){
+          for(var yy = gcy - rr; yy <= gcy + rr; yy++){
+            if(yy < 0 || yy >= gRows) continue;
+            var fullRow = (yy === gcy - rr || yy === gcy + rr);
+            var stp = fullRow ? 1 : 2 * rr;
+            for(var xx = gcx - rr; xx <= gcx + rr; xx += stp){
+              if(xx < 0 || xx >= gCols) continue;
+              var cell = yy * gCols + xx;
+              for(var t = cellStart[cell]; t < cellStart[cell + 1]; t++){
+                var j = cellItems[t];
+                if(j === i) continue;
+                var dx = x[j] - xi, dy = y[j] - yi;
+                var d2 = dx * dx + dy * dy;
+                if(cnt < k || d2 < nD2[cnt - 1]){
+                  var pos = cnt < k ? cnt : k - 1;
+                  if(cnt < k) cnt++;
+                  while(pos > 0 && nD2[pos - 1] > d2){
+                    nIdx[pos] = nIdx[pos - 1]; nDx[pos] = nDx[pos - 1];
+                    nDy[pos] = nDy[pos - 1]; nD2[pos] = nD2[pos - 1];
+                    pos--;
+                  }
+                  nIdx[pos] = j; nDx[pos] = dx; nDy[pos] = dy; nD2[pos] = d2;
+                }
+              }
+            }
+          }
+          if(cnt >= k){
+            var lim = rr * gCs;
+            if(nD2[k - 1] <= lim * lim) break;
+          }
+          if(rr > gMaxR) break;
+        }
+      } else {
+        var rad = Math.ceil(P.radius / gCs);
+        for(var yy2 = Math.max(0, gcy - rad); yy2 <= Math.min(gRows - 1, gcy + rad); yy2++){
+          for(var xx2 = Math.max(0, gcx - rad); xx2 <= Math.min(gCols - 1, gcx + rad); xx2++){
+            var cell2 = yy2 * gCols + xx2;
+            for(var t2 = cellStart[cell2]; t2 < cellStart[cell2 + 1]; t2++){
+              var j2 = cellItems[t2];
+              if(j2 === i) continue;
+              var ex = x[j2] - xi, ey = y[j2] - yi;
+              var e2 = ex * ex + ey * ey;
+              if(e2 < R2){
+                nIdx[cnt] = j2; nDx[cnt] = ex; nDy[cnt] = ey; nD2[cnt] = e2;
+                cnt++;
+              }
+            }
+          }
+        }
+      }
+      return cnt;
+    }
+
+    /* ---- 조향 ---- */
+    var st = [0, 0];
+    function steer(ux, uy, cvx, cvy, maxS, maxF){
+      var m = Math.sqrt(ux * ux + uy * uy);
+      if(m < 1e-9){ st[0] = 0; st[1] = 0; return; }
+      var sx = ux / m * maxS - cvx;
+      var sy = uy / m * maxS - cvy;
+      var sm = Math.sqrt(sx * sx + sy * sy);
+      if(sm > maxF){ sx *= maxF / sm; sy *= maxF / sm; }
+      st[0] = sx; st[1] = sy;
+    }
+
+
+    /* ---- 자발적 방향 전환 (전파식) ----
+       Attanasi 등(2015): 자발적 전환은 무리의 옆쪽 가장자리에서 서로 가까운 소수의 새가 안쪽으로 방향을 틀면서 시작되고,
+       전환 신호가 무리 안을 일정한 속도로 퍼지고(Attanasi 등, 2014), 새들은 같은 반지름의 경로로 돈다. 이 구현은 그 관찰을 단순하게 옮긴 것이며 논문의 공식은 아니다.
+       (1) 무작위 시각에 옆쪽 가장자리의 가까운 새 K마리가 안쪽으로 돌기 시작한다.
+       (2) 다른 새는 시작 지점에서의 거리 ÷ 전파 속도만큼 늦게 같은 방향으로 돌기 시작한다(전파 속도는 새의 최대 속도의 2.5배).
+       (3) 모든 새가 같은 회전 속도(같은 반지름)로 정해진 각도만큼만 돈다. 시작 시각은 미리 정해 둔 것이며 이웃과의 상호작용에서 나온 값이 아니다. */
+    var TURN_DUR = 90, TURN_RAMP = 20, WAVE_C = 2.5;   // 회전 시간(프레임), 회전이 서서히 빨라지는 시간(프레임), 전환 신호의 전파 속도(새의 최대 속도의 배수)
+    var tCnt = new Int16Array(MAX), tWait = new Int16Array(MAX), tDir = new Int8Array(MAX);
+    var turnOmega = 0, turnActive = 0, spontNext = -1, spontTick = 0, spontCount = 0;
+    var spontLast = {side: 0, inward: 0, K: 0, tick: 0, angle: 0};
+    var sVal = new Float32Array(MAX), sTmp = new Float32Array(MAX);
+    function spontTrigger(n){
+      if(!P.spont){
+        if(turnActive > 0){ for(var q = 0; q < n; q++){ tCnt[q] = 0; tWait[q] = 0; } turnActive = 0; }
+        spontNext = -1;
+        return;
+      }
+      if(n < 20) return;
+      spontTick++;
+      if(spontNext < 0) spontNext = spontTick + (-Math.log(1 - Math.random()) * P.spontEvery * 60);
+      if(spontTick < spontNext) return;
+      if(turnActive > 0){ spontNext = spontTick + 60; return; }        // 전환이 진행 중이면 잠시 뒤에 다시 시도
+      spontNext = spontTick + (-Math.log(1 - Math.random()) * P.spontEvery * 60);
+      var i, mx = 0, my = 0, hx = 0, hy = 0;
+      for(i = 0; i < n; i++){
+        mx += x[i]; my += y[i];
+        var hl = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]) || 1;
+        hx += vx[i] / hl; hy += vy[i] / hl;
+      }
+      mx /= n; my /= n;
+      var sl = Math.sqrt(hx * hx + hy * hy);
+      if(sl / n < 0.3) return;                            // 방향이 제각각이면 시작하지 않는다
+      hx /= sl; hy /= sl;                                 // 무리의 평균 진행 방향
+      // 옆쪽 위치 s: 화면에서 진행 방향의 오른쪽이 +, 왼쪽이 −
+      for(i = 0; i < n; i++) sVal[i] = (x[i] - mx) * (-hy) + (y[i] - my) * hx;
+      var side = Math.random() < 0.5 ? 1 : -1;
+      var m = Math.max(5, Math.floor(n * 0.15));
+      for(i = 0; i < n; i++) sTmp[i] = side * sVal[i];
+      var srt = Array.prototype.slice.call(sTmp.subarray(0, n)).sort(function(a, b){ return b - a; });
+      var thr = srt[Math.min(m, n) - 1], cand = [];
+      for(i = 0; i < n; i++) if(side * sVal[i] >= thr) cand.push(i);
+      var seed = cand[Math.floor(Math.random() * cand.length)];
+      var K = Math.max(1, Math.min(Math.round(P.spontN), Math.floor(n / 4)));
+      var ord = [];
+      for(i = 0; i < n; i++){
+        var dx = x[i] - x[seed], dy = y[i] - y[seed];
+        ord.push([dx * dx + dy * dy, i]);
+      }
+      ord.sort(function(a, b){ return a[0] - b[0]; });
+      var inward = -side;
+      var evAng = P.spontAngle * (0.7 + 0.6 * Math.random());
+      turnOmega = evAng * Math.PI / 180 / (TURN_DUR - TURN_RAMP / 2);   // 서서히 빨라지는 구간을 감안해 총 회전각이 목표와 같아지게 한다
+      for(i = 0; i < K; i++){ tCnt[ord[i][1]] = TURN_DUR; tDir[ord[i][1]] = inward; }
+      var waveC = WAVE_C * P.speed;
+      for(i = 0; i < n; i++){
+        var dx2 = x[i] - x[seed], dy2 = y[i] - y[seed];
+        tDir[i] = inward;
+        tWait[i] = Math.max(1, Math.round(Math.sqrt(dx2 * dx2 + dy2 * dy2) / waveC + Math.random() * 3));
+      }
+      for(i = 0; i < K; i++){ tCnt[ord[i][1]] = TURN_DUR; tWait[ord[i][1]] = 0; }
+      turnActive = n; spontCount++;
+      spontLast.side = side; spontLast.inward = inward; spontLast.K = K; spontLast.tick = spontTick; spontLast.angle = evAng;
+    }
+
+    function step(){
+      var n = count;
+      spontTrigger(n);
+      var actNext = 0;
+      updatePredator(n);
+      var R2 = P.radius * P.radius;
+      var sd2 = P.sepDist * P.sepDist;
+      var maxS = P.speed, minS = P.speed * 0.5, maxF = P.force;
+      var knn = P.mode === 'knn';
+      var inertial = P.align === 'inertial';
+      var k = Math.min(P.k, Math.max(n - 1, 1));
+      var totalNbr = 0;
+      buildGrid(n, knn);
+
+      for(var i = 0; i < n; i++){
+        var xi = x[i], yi = y[i];
+        var cnt = findNeighbors(i, knn, k, R2);
+        totalNbr += cnt;
+        if(tWait[i] > 0){
+          // 전파 대기: 전환 신호가 이 새에게 도착하면(시작 지점에서의 거리 ÷ 전파 속도) 돌기 시작한다
+          tWait[i]--;
+          if(tWait[i] === 0) tCnt[i] = TURN_DUR;
+        }
+
+        var fx = 0, fy = 0, tq = 0;
+        if(cnt > 0){
+          var sx = 0, sy = 0, sc = 0, ax = 0, ay = 0, cx = 0, cy = 0;
+          for(var m = 0; m < cnt; m++){
+            var d2m = nD2[m];
+            cx += nDx[m]; cy += nDy[m];
+            ax += vx[nIdx[m]]; ay += vy[nIdx[m]];
+            if(d2m < sd2 && d2m > 1e-6){
+              sx -= nDx[m] / d2m; sy -= nDy[m] / d2m; sc++;
+            }
+          }
+          if(sc > 0){
+            steer(sx, sy, vx[i], vy[i], maxS, maxF);
+            fx += P.wSep * st[0]; fy += P.wSep * st[1];
+          }
+          if(inertial){
+            // 이웃 방향과의 차이 sin(φj − φi)의 평균 = 회전 토크
+            var vi = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]) || 1;
+            var msum = 0;
+            for(var m2 = 0; m2 < cnt; m2++){
+              var jn = nIdx[m2];
+              var vj = Math.sqrt(vx[jn] * vx[jn] + vy[jn] * vy[jn]) || 1;
+              msum += (vx[i] * vy[jn] - vy[i] * vx[jn]) / (vi * vj);
+            }
+            tq = msum / cnt;
+          } else {
+            steer(ax / cnt, ay / cnt, vx[i], vy[i], maxS, maxF);
+            fx += P.wAli * st[0]; fy += P.wAli * st[1];
+          }
+          steer(cx / cnt, cy / cnt, vx[i], vy[i], maxS, maxF);
+          fx += P.wCoh * st[0]; fy += P.wCoh * st[1];
+        }
+
+        // 포식자 회피
+        var capS = maxS;
+        if(P.pred){
+          var pdx = xi - pred.x, pdy = yi - pred.y;
+          var pd2 = pdx * pdx + pdy * pdy;
+          if(pd2 < P.predR * P.predR){
+            var pd = Math.sqrt(pd2) || 1;
+            capS = maxS * 1.3;
+            steer(pdx, pdy, vx[i], vy[i], capS, maxF);
+            var fw = P.wFlee * (1 - pd / P.predR);
+            fx += fw * st[0]; fy += fw * st[1];
+          }
+        }
+
+        // 경계 회피: 가장자리에 가까울수록 안쪽으로 향하는 힘을 키운다
+        var margin = 40 + P.speed * 12;
+        var turn = 0.5;
+        if(xi < margin) fx += turn * (margin - xi) / margin;
+        else if(xi > W - margin) fx -= turn * (xi - (W - margin)) / margin;
+        if(yi < margin) fy += turn * (margin - yi) / margin;
+        else if(yi > H - margin) fy -= turn * (yi - (H - margin)) / margin;
+
+        var tx = vx[i] + fx, ty = vy[i] + fy;
+        var sp = Math.sqrt(tx * tx + ty * ty);
+        if(sp > capS){ tx *= capS / sp; ty *= capS / sp; }
+        else if(sp < minS){
+          if(sp < 1e-6){ tx = minS; ty = 0; } else { tx *= minS / sp; ty *= minS / sp; }
+        }
+        if(inertial){
+          // 정렬 항이 속도를 최대 속도 쪽으로 밀어주지 않으므로 속도를 서서히 되돌린다
+          var sp2 = Math.sqrt(tx * tx + ty * ty) || 1;
+          var tgt = sp2 + 0.2 * (capS - sp2);
+          tx *= tgt / sp2; ty *= tgt / sp2;
+          // χ·dω/dt = J·tq − η·ω  (s = χω), 각속도 상한 0.35 rad/프레임
+          spin[i] += P.wAli * 0.06 * tq - (P.eta / P.chi) * spin[i];
+          var om = spin[i] / P.chi;
+          if(om > 0.35){ om = 0.35; spin[i] = om * P.chi; }
+          else if(om < -0.35){ om = -0.35; spin[i] = om * P.chi; }
+          var co = Math.cos(om), so = Math.sin(om);
+          var rx = tx * co - ty * so;
+          ty = tx * so + ty * co; tx = rx;
+        }
+        if(tCnt[i] > 0){
+          // 전환 중인 새: 정해진 회전 속도로 돈다(화면에서 오른쪽 회전이면 각도가 +)
+          var ramp = (TURN_DUR - tCnt[i] + 1) / TURN_RAMP; if(ramp > 1) ramp = 1;
+          var ka = tDir[i] * turnOmega * ramp;
+          var kc = Math.cos(ka), ks = Math.sin(ka);
+          var knx = tx * kc - ty * ks; ty = tx * ks + ty * kc; tx = knx;
+          tCnt[i]--;
+        }
+        if(tCnt[i] > 0 || tWait[i] > 0) actNext++;
+        nvx[i] = tx; nvy[i] = ty;
+      }
+      turnActive = actNext;
+
+      var ux = 0, uy = 0;
+      for(var q = 0; q < n; q++){
+        vx[q] = nvx[q]; vy[q] = nvy[q];
+        x[q] += vx[q]; y[q] += vy[q];
+        if(x[q] < 0){ x[q] = 0; vx[q] = Math.abs(vx[q]); }
+        else if(x[q] > W){ x[q] = W; vx[q] = -Math.abs(vx[q]); }
+        if(y[q] < 0){ y[q] = 0; vy[q] = Math.abs(vy[q]); }
+        else if(y[q] > H){ y[q] = H; vy[q] = -Math.abs(vy[q]); }
+        var s = Math.sqrt(vx[q] * vx[q] + vy[q] * vy[q]) || 1;
+        ux += vx[q] / s; uy += vy[q] / s;
+      }
+      pol = n ? Math.sqrt(ux * ux + uy * uy) / n : 0;
+      avgNbr = n ? totalNbr / n : 0;
+    }
+
+
+    /* ---- 이탈도(dealignment): 각 새가 최근 약 1초 동안 무리 평균 방향에서 벗어난 시간의 비율 ----
+       Attanasi 등(2015)의 δ_i: C_i = (개체 방향)·(무리 평균 방향)이 중앙값보다 낮은 시간의 비율. 1초(60프레임) 지수 평균으로 계산한다. */
+    var dealign = new Float32Array(MAX), dCos = new Float32Array(MAX), trackDealign = false;
+    function meanHeading(){
+      var su = 0, sv = 0;
+      for(var i = 0; i < count; i++){
+        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]) || 1;
+        su += vx[i] / l; sv += vy[i] / l;
+      }
+      var L = Math.sqrt(su * su + sv * sv) || 1;
+      return [su / L, sv / L];
+    }
+    function updateDealign(){
+      var n = count;
+      if(n < 10) return;
+      var H = meanHeading(), i;
+      for(i = 0; i < n; i++){
+        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]) || 1;
+        dCos[i] = (vx[i] * H[0] + vy[i] * H[1]) / l;
+      }
+      var stride = Math.max(1, Math.floor(n / 256)), smp = [];
+      for(i = 0; i < n; i += stride) smp.push(dCos[i]);
+      smp.sort(function(a, b){ return a - b; });
+      var c0 = smp[Math.floor(smp.length / 2)];
+      for(i = 0; i < n; i++) dealign[i] += ((dCos[i] < c0 ? 1 : 0) - dealign[i]) / 60;
+    }
+    // 옆쪽 가장자리(진행 방향에 수직인 방향으로 가장 바깥 10%)와 안쪽 50%의 평균 이탈도
+    function dealignStats(){
+      var n = count;
+      if(n < 20) return null;
+      var H = meanHeading(), nx = -H[1], ny = H[0];
+      var mx = 0, my = 0, i;
+      for(i = 0; i < n; i++){ mx += x[i]; my += y[i]; }
+      mx /= n; my /= n;
+      var ord = [];
+      for(i = 0; i < n; i++) ord.push([Math.abs((x[i] - mx) * nx + (y[i] - my) * ny), dealign[i]]);
+      ord.sort(function(a, b){ return b[0] - a[0]; });
+      var k10 = Math.max(1, Math.floor(n * 0.1)), h = Math.floor(n * 0.5), o = 0, inn = 0;
+      for(i = 0; i < k10; i++) o += ord[i][1];
+      for(i = h; i < n; i++) inn += ord[i][1];
+      return {outer: o / k10, inner: inn / (n - h)};
+    }
+
+    /* ---- 초기화, 개체 수, 표시용 ---- */
+    function spawn(i){
+      x[i] = Math.random() * W;
+      y[i] = Math.random() * H;
+      var a = Math.random() * Math.PI * 2;
+      var s = P.speed * (0.6 + 0.4 * Math.random());
+      vx[i] = Math.cos(a) * s;
+      vy[i] = Math.sin(a) * s;
+      spin[i] = 0;
+      dealign[i] = 0.5;
+      tCnt[i] = 0; tWait[i] = 0;
+    }
+    function syncCount(){
+      var target = Math.min(MAX, Math.max(1, Math.round(P.n)));
+      while(count < target){ spawn(count); count++; }
+      if(count > target) count = target;
+    }
+    function reset(){ count = 0; spontNext = -1; turnActive = 0; syncCount(); resetPred(); }
+
+    // 선택 개체(0번)에서 가장 가까운 7마리는 mark=1, 선택 개체는 mark=2
+    function updateMarks(){
+      if(trackDealign) updateDealign();
+      mark.fill(0, 0, count);
+      if(turnActive > 0) for(var q = 0; q < count; q++) if(tCnt[q] > 0) mark[q] = 3;   // 전환 중인 새
+      if(count < 1) return;
+      mark[FOCAL] = 2;
+      if(count < 2) return;
+      var kk = Math.min(FOCAL_N, count - 1), c = 0;
+      for(var j = 0; j < count; j++){
+        if(j === FOCAL) continue;
+        var dx = x[j] - x[FOCAL], dy = y[j] - y[FOCAL];
+        var d2 = dx * dx + dy * dy;
+        if(c < kk || d2 < fD2[c - 1]){
+          var pos = c < kk ? c : kk - 1;
+          if(c < kk) c++;
+          while(pos > 0 && fD2[pos - 1] > d2){ fIdx[pos] = fIdx[pos - 1]; fD2[pos] = fD2[pos - 1]; pos--; }
+          fIdx[pos] = j; fD2[pos] = d2;
+        }
+      }
+      for(var m = 0; m < c; m++) mark[fIdx[m]] = 1;
+    }
+
+    // 선택 개체 주변 100px 이내 개체의 속도 방향을 120도 돌린다.
+    // dir > 0: 새가 향한 방향 기준 오른쪽(화면에서 시계 방향), dir < 0: 왼쪽
+    function kick(dir){
+      var a = (dir < 0 ? -1 : 1) * 2.1, c = Math.cos(a), s = Math.sin(a);
+      for(var i = 0; i < count; i++){
+        var dx = x[i] - x[FOCAL], dy = y[i] - y[FOCAL];
+        if(dx * dx + dy * dy < 10000){
+          var rx = vx[i] * c - vy[i] * s;
+          vy[i] = vx[i] * s + vy[i] * c; vx[i] = rx;
+        }
+      }
+    }
+
+    function resize(w, h){ W = Math.max(w, 50); H = Math.max(h, 50); }
+
+    reset();
+    return {
+      P: P, MAX: MAX, x: x, y: y, vx: vx, vy: vy, mark: mark, pred: pred,
+      get count(){ return count; },
+      get pol(){ return pol; },
+      get spontCount(){ return spontCount; },
+      get spontLast(){ return spontLast; },
+      get turnActive(){ return turnActive; },
+      forceSpont: function(){ spontNext = spontTick; },
+      dealign: dealign,
+      dealignStats: dealignStats,
+      setTrackDealign: function(v){ trackDealign = !!v; for(var i = 0; i < count; i++) dealign[i] = 0.5; },
+      get avgNbr(){ return avgNbr; },
+      get W(){ return W; },
+      get H(){ return H; },
+      resize: resize, setCount: syncCount, reset: reset, resetPred: resetPred, step: step,
+      updateMarks: updateMarks, kick: kick,
+      debugNeighbors: function(i, knn, k){
+        buildGrid(count, knn);
+        var kk = Math.min(k, Math.max(count - 1, 1));
+        var c = findNeighbors(i, knn, kk, P.radius * P.radius);
+        var out = [];
+        for(var m = 0; m < c; m++) out.push([nIdx[m], nD2[m]]);
+        return out;
+      }
+    };
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+
+<script>
+
+/* ===== 시뮬레이션 핵심 (렌더링과 무관) ===== */
+(function(global){
+  global.createSim3D = function(){
+    var MAX = 10000;
+    var P = {
+      wSep:1.5, wAli:1.0, wCoh:1.0,
+      n:500, speed:3.5, force:0.1,
+      k:7, radius:40, sepDist:15,
+      mode:'radius', align:'inertial', chi:10, eta:0.4,
+      pred:false, wFlee:3, predR:150, predSpeed:1.3,
+      roost:false, wRoost:1, roostR:150,
+      birdSize:1.5, alignedStart:true,
+      spont:false, spontEvery:6, spontN:10, spontAngle:90
+    };
+    // 활동 구역: 타원체 반지름 (x, y=높이, z)
+    var RA = 520, RB = 260, RC = 420;
+    var TURN = 0.5;
+
+    var x = new Float32Array(MAX), y = new Float32Array(MAX), z = new Float32Array(MAX);
+    var vx = new Float32Array(MAX), vy = new Float32Array(MAX), vz = new Float32Array(MAX);
+    var nvx = new Float32Array(MAX), nvy = new Float32Array(MAX), nvz = new Float32Array(MAX);
+    var spx = new Float32Array(MAX), spy = new Float32Array(MAX), spz = new Float32Array(MAX);
+    var nIdx = new Int32Array(MAX);
+    var nDx = new Float32Array(MAX), nDy = new Float32Array(MAX), nDz = new Float32Array(MAX), nD2 = new Float32Array(MAX);
+    var count = 0;
+    var FOCAL = 0, FOCAL_N = 7;
+    var mark = new Uint8Array(MAX);
+    var fIdx = new Int32Array(FOCAL_N), fD2 = new Float32Array(FOCAL_N);
+    var avgNbr = 0, pol = 0;
+
+    /* ---- 포식자 ---- */
+    var PRED_TURN = 0.05, PRED_CATCH = 10, PRED_REST = 90, PRED_TIMEOUT = 240;
+    var pred = {x:0, y:0, z:0, vx:0, vy:0, vz:0, state:'hunt', t:0, target:-1, hits:0, wallHits:0};
+
+    function resetPred(){
+      pred.x = -RA * 0.8; pred.y = 0; pred.z = 0;
+      pred.vx = P.speed * P.predSpeed; pred.vy = 0; pred.vz = 0;
+      pred.state = 'hunt'; pred.t = 0; pred.target = -1; pred.hits = 0; pred.wallHits = 0;
+    }
+
+    function updatePredator(n){
+      if(!P.pred || n < 1) return;
+      var ps = P.speed * P.predSpeed;
+      var has = false, dsx = 0, dsy = 0, dsz = 0;
+      pred.t++;
+      if(pred.state === 'hunt'){
+        if(pred.target < 0 || pred.target >= n){
+          var bd = 1e18, bi = 0;
+          for(var i = 0; i < n; i++){
+            var ex = x[i] - pred.x, ey = y[i] - pred.y, ez = z[i] - pred.z;
+            var ed = ex * ex + ey * ey + ez * ez;
+            if(ed < bd){ bd = ed; bi = i; }
+          }
+          pred.target = bi; pred.t = 0;
+        }
+        var tg = pred.target;
+        var dx = x[tg] - pred.x, dy = y[tg] - pred.y, dz = z[tg] - pred.z;
+        var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if(d < PRED_CATCH){ pred.hits++; pred.state = 'rest'; pred.t = 0; pred.target = -1; }
+        else if(pred.t > PRED_TIMEOUT){ pred.state = 'rest'; pred.t = 0; pred.target = -1; }
+        else {
+          var lead = Math.min(30, d / ps);
+          dsx = x[tg] + vx[tg] * lead - pred.x;
+          dsy = y[tg] + vy[tg] * lead - pred.y;
+          dsz = z[tg] + vz[tg] * lead - pred.z;
+          has = true;
+        }
+      } else {
+        if(pred.t > PRED_REST){ pred.state = 'hunt'; pred.t = 0; pred.target = -1; }
+        var mx = 0, my = 0, mz = 0;
+        for(var q = 0; q < n; q++){ mx += x[q]; my += y[q]; mz += z[q]; }
+        dsx = pred.x - mx / n; dsy = pred.y - my / n; dsz = pred.z - mz / n;
+        has = true;
+      }
+      var hl = Math.sqrt(pred.vx * pred.vx + pred.vy * pred.vy + pred.vz * pred.vz) || 1;
+      var hx = pred.vx / hl, hy = pred.vy / hl, hz = pred.vz / hl;
+      if(!has){ dsx = hx; dsy = hy; dsz = hz; }
+
+      // 구역 가장자리 쪽으로 향하면서 선회 반경 이내로 가까워지면 중심 쪽으로 향한다
+      var rq = Math.sqrt(pred.x * pred.x / (RA * RA) + pred.y * pred.y / (RB * RB) + pred.z * pred.z / (RC * RC));
+      var outward = pred.x * hx / (RA * RA) + pred.y * hy / (RB * RB) + pred.z * hz / (RC * RC);
+      var rlim = Math.max(0.2, 1 - 2 * ps / PRED_TURN / Math.min(RA, RB, RC));
+      if(rq > rlim && outward > 0){ dsx = -pred.x; dsy = -pred.y; dsz = -pred.z; }
+
+      // 회전 속도 제한
+      var dl = Math.sqrt(dsx * dsx + dsy * dsy + dsz * dsz);
+      if(dl < 1e-9){ dsx = hx; dsy = hy; dsz = hz; dl = 1; }
+      dsx /= dl; dsy /= dl; dsz /= dl;
+      var cosang = hx * dsx + hy * dsy + hz * dsz;
+      if(cosang > 1) cosang = 1; else if(cosang < -1) cosang = -1;
+      var ang = Math.acos(cosang);
+      var nx, ny, nz;
+      if(ang <= PRED_TURN){ nx = dsx; ny = dsy; nz = dsz; }
+      else {
+        var ppx = dsx - cosang * hx, ppy = dsy - cosang * hy, ppz = dsz - cosang * hz;
+        var pl = Math.sqrt(ppx * ppx + ppy * ppy + ppz * ppz);
+        if(pl < 1e-6){
+          if(Math.abs(hx) < 0.9){ ppx = 1 - hx * hx; ppy = -hx * hy; ppz = -hx * hz; }
+          else { ppx = -hy * hx; ppy = 1 - hy * hy; ppz = -hy * hz; }
+          pl = Math.sqrt(ppx * ppx + ppy * ppy + ppz * ppz) || 1;
+        }
+        ppx /= pl; ppy /= pl; ppz /= pl;
+        var cs = Math.cos(PRED_TURN), sn = Math.sin(PRED_TURN);
+        nx = hx * cs + ppx * sn; ny = hy * cs + ppy * sn; nz = hz * cs + ppz * sn;
+      }
+      pred.vx = nx * ps; pred.vy = ny * ps; pred.vz = nz * ps;
+      pred.x += pred.vx; pred.y += pred.vy; pred.z += pred.vz;
+      // 구역 밖으로 나가면 경계로 되돌리고 바깥 성분을 반사
+      var r2 = pred.x * pred.x / (RA * RA) + pred.y * pred.y / (RB * RB) + pred.z * pred.z / (RC * RC);
+      if(r2 > 1){
+        var f = 0.999 / Math.sqrt(r2);
+        pred.x *= f; pred.y *= f; pred.z *= f;
+        var gx = pred.x / (RA * RA), gy = pred.y / (RB * RB), gz = pred.z / (RC * RC);
+        var gl = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
+        gx /= gl; gy /= gl; gz /= gl;
+        var vn = pred.vx * gx + pred.vy * gy + pred.vz * gz;
+        if(vn > 0){ pred.vx -= 2 * vn * gx; pred.vy -= 2 * vn * gy; pred.vz -= 2 * vn * gz; }
+        pred.wallHits++;
+      }
+    }
+
+    /* ---- 3차원 균일 격자 ---- */
+    var cellStart = new Int32Array(1), cellFill = new Int32Array(1);
+    var cellItems = new Int32Array(MAX), cellOf = new Int32Array(MAX);
+    var gMinX = 0, gMinY = 0, gMinZ = 0, gCs = 1, gNx = 1, gNy = 1, gNz = 1, gMaxR = 1;
+
+    function buildGrid(n, knn){
+      var minx = 1e9, miny = 1e9, minz = 1e9, maxx = -1e9, maxy = -1e9, maxz = -1e9;
+      for(var i = 0; i < n; i++){
+        if(x[i] < minx) minx = x[i]; if(x[i] > maxx) maxx = x[i];
+        if(y[i] < miny) miny = y[i]; if(y[i] > maxy) maxy = y[i];
+        if(z[i] < minz) minz = z[i]; if(z[i] > maxz) maxz = z[i];
+      }
+      var ex = maxx - minx + 1e-3, ey = maxy - miny + 1e-3, ez = maxz - minz + 1e-3;
+      var vol = Math.max(ex * ey * ez, 1);
+      var cs = knn ? Math.max(6, 1.5 * Math.cbrt(vol / Math.max(n, 1))) : Math.max(P.radius, 6);
+      while(Math.ceil(ex / cs) * Math.ceil(ey / cs) * Math.ceil(ez / cs) > 400000) cs *= 1.25;
+      gCs = cs; gMinX = minx; gMinY = miny; gMinZ = minz;
+      gNx = Math.max(1, Math.ceil(ex / cs)); gNy = Math.max(1, Math.ceil(ey / cs)); gNz = Math.max(1, Math.ceil(ez / cs));
+      gMaxR = Math.max(gNx, gNy, gNz);
+      var cells = gNx * gNy * gNz;
+      if(cellStart.length < cells + 1){
+        cellStart = new Int32Array(cells + 1);
+        cellFill = new Int32Array(cells + 1);
+      }
+      cellStart.fill(0, 0, cells + 1);
+      for(var a = 0; a < n; a++){
+        var cx = Math.min(gNx - 1, Math.max(0, Math.floor((x[a] - gMinX) / cs)));
+        var cy = Math.min(gNy - 1, Math.max(0, Math.floor((y[a] - gMinY) / cs)));
+        var cz = Math.min(gNz - 1, Math.max(0, Math.floor((z[a] - gMinZ) / cs)));
+        var cc = (cz * gNy + cy) * gNx + cx;
+        cellOf[a] = cc;
+        cellStart[cc + 1]++;
+      }
+      for(var c2 = 0; c2 < cells; c2++) cellStart[c2 + 1] += cellStart[c2];
+      for(var c3 = 0; c3 < cells; c3++) cellFill[c3] = cellStart[c3];
+      for(var b = 0; b < n; b++) cellItems[cellFill[cellOf[b]]++] = b;
+    }
+
+    // i번 개체의 이웃을 nIdx/nDx/nDy/nDz/nD2에 채우고 개수를 반환
+    function findNeighbors(i, knn, k, R2){
+      var cnt = 0;
+      var xi = x[i], yi = y[i], zi = z[i];
+      var gc = cellOf[i];
+      var gcx = gc % gNx, gcy = ((gc / gNx) | 0) % gNy, gcz = (gc / (gNx * gNy)) | 0;
+      if(knn){
+        for(var rr = 0; ; rr++){
+          for(var zz = gcz - rr; zz <= gcz + rr; zz++){
+            if(zz < 0 || zz >= gNz) continue;
+            var zEdge = (zz === gcz - rr || zz === gcz + rr);
+            for(var yy = gcy - rr; yy <= gcy + rr; yy++){
+              if(yy < 0 || yy >= gNy) continue;
+              var yEdge = (yy === gcy - rr || yy === gcy + rr);
+              var stp = (zEdge || yEdge) ? 1 : 2 * rr;
+              for(var xx = gcx - rr; xx <= gcx + rr; xx += stp){
+                if(xx < 0 || xx >= gNx) continue;
+                var cell = (zz * gNy + yy) * gNx + xx;
+                for(var t = cellStart[cell]; t < cellStart[cell + 1]; t++){
+                  var j = cellItems[t];
+                  if(j === i) continue;
+                  var dx = x[j] - xi, dy = y[j] - yi, dz = z[j] - zi;
+                  var d2 = dx * dx + dy * dy + dz * dz;
+                  if(cnt < k || d2 < nD2[cnt - 1]){
+                    var pos = cnt < k ? cnt : k - 1;
+                    if(cnt < k) cnt++;
+                    while(pos > 0 && nD2[pos - 1] > d2){
+                      nIdx[pos] = nIdx[pos - 1]; nDx[pos] = nDx[pos - 1];
+                      nDy[pos] = nDy[pos - 1]; nDz[pos] = nDz[pos - 1]; nD2[pos] = nD2[pos - 1];
+                      pos--;
+                    }
+                    nIdx[pos] = j; nDx[pos] = dx; nDy[pos] = dy; nDz[pos] = dz; nD2[pos] = d2;
+                  }
+                }
+              }
+            }
+          }
+          if(cnt >= k){
+            var lim = rr * gCs;
+            if(nD2[k - 1] <= lim * lim) break;
+          }
+          if(rr > gMaxR) break;
+        }
+      } else {
+        var rad = Math.ceil(P.radius / gCs);
+        var z0 = Math.max(0, gcz - rad), z1 = Math.min(gNz - 1, gcz + rad);
+        var y0 = Math.max(0, gcy - rad), y1 = Math.min(gNy - 1, gcy + rad);
+        var x0 = Math.max(0, gcx - rad), x1 = Math.min(gNx - 1, gcx + rad);
+        for(var z2 = z0; z2 <= z1; z2++){
+          for(var y2 = y0; y2 <= y1; y2++){
+            for(var x2 = x0; x2 <= x1; x2++){
+              var cell2 = (z2 * gNy + y2) * gNx + x2;
+              for(var t2 = cellStart[cell2]; t2 < cellStart[cell2 + 1]; t2++){
+                var j2 = cellItems[t2];
+                if(j2 === i) continue;
+                var ex = x[j2] - xi, ey = y[j2] - yi, ez = z[j2] - zi;
+                var e2 = ex * ex + ey * ey + ez * ez;
+                if(e2 < R2){
+                  nIdx[cnt] = j2; nDx[cnt] = ex; nDy[cnt] = ey; nDz[cnt] = ez; nD2[cnt] = e2;
+                  cnt++;
+                }
+              }
+            }
+          }
+        }
+      }
+      return cnt;
+    }
+
+    /* ---- 조향 ---- */
+    var st = [0, 0, 0];
+    function steer(ux, uy, uz, cvx, cvy, cvz, maxS, maxF){
+      var m = Math.sqrt(ux * ux + uy * uy + uz * uz);
+      if(m < 1e-9){ st[0] = 0; st[1] = 0; st[2] = 0; return; }
+      var k = maxS / m;
+      var sx = ux * k - cvx, sy = uy * k - cvy, sz = uz * k - cvz;
+      var sm = Math.sqrt(sx * sx + sy * sy + sz * sz);
+      if(sm > maxF){ var f = maxF / sm; sx *= f; sy *= f; sz *= f; }
+      st[0] = sx; st[1] = sy; st[2] = sz;
+    }
+
+
+    /* ---- 자발적 방향 전환 (전파식) ----
+       Attanasi 등(2015): 자발적 전환은 무리의 옆쪽 가장자리에서 서로 가까운 소수의 새가 안쪽으로 방향을 틀면서 시작되고,
+       전환 신호가 무리 안을 일정한 속도로 퍼지고(Attanasi 등, 2014), 새들은 같은 반지름의 경로로 돈다. 이 구현은 그 관찰을 단순하게 옮긴 것이며 논문의 공식은 아니다.
+       (1) 무작위 시각에 옆쪽 가장자리의 가까운 새 K마리가 안쪽으로 돌기 시작한다.
+       (2) 다른 새는 시작 지점에서의 거리 ÷ 전파 속도만큼 늦게 같은 방향으로 돌기 시작한다(전파 속도는 새의 최대 속도의 2.5배).
+       (3) 모든 새가 같은 회전 속도(같은 반지름)로 정해진 각도만큼만 돈다. 시작 시각은 미리 정해 둔 것이며 이웃과의 상호작용에서 나온 값이 아니다. */
+    var TURN_DUR = 90, TURN_RAMP = 20, WAVE_C = 2.5;   // 회전 시간(프레임), 회전이 서서히 빨라지는 시간(프레임), 전환 신호의 전파 속도(새의 최대 속도의 배수)
+    var tCnt = new Int16Array(MAX), tWait = new Int16Array(MAX), tDir = new Int8Array(MAX);
+    var turnOmega = 0, turnActive = 0, spontNext = -1, spontTick = 0, spontCount = 0;
+    var spontLast = {side: 0, inward: 0, K: 0, tick: 0, angle: 0};
+    var sVal = new Float32Array(MAX), sTmp = new Float32Array(MAX);
+    function spontTrigger(n){
+      if(!P.spont){
+        if(turnActive > 0){ for(var q = 0; q < n; q++){ tCnt[q] = 0; tWait[q] = 0; } turnActive = 0; }
+        spontNext = -1;
+        return;
+      }
+      if(n < 20) return;
+      spontTick++;
+      if(spontNext < 0) spontNext = spontTick + (-Math.log(1 - Math.random()) * P.spontEvery * 60);
+      if(spontTick < spontNext) return;
+      if(turnActive > 0){ spontNext = spontTick + 60; return; }        // 전환이 진행 중이면 잠시 뒤에 다시 시도
+      spontNext = spontTick + (-Math.log(1 - Math.random()) * P.spontEvery * 60);
+      var i, mx = 0, mz = 0, su = 0, sw = 0;
+      for(i = 0; i < n; i++){
+        mx += x[i]; mz += z[i];
+        var hl = Math.sqrt(vx[i] * vx[i] + vz[i] * vz[i]) || 1;
+        su += vx[i] / hl; sw += -vz[i] / hl;
+      }
+      mx /= n; mz /= n;
+      var sl = Math.sqrt(su * su + sw * sw);
+      if(sl / n < 0.3) return;                            // 방향이 제각각이면 시작하지 않는다
+      var hu = su / sl, hw = sw / sl;                     // 위에서 본 평면(u=x, w=-z)에서 무리의 평균 진행 방향
+      // 옆쪽 위치 s: 진행 방향의 오른쪽이 +, 왼쪽이 −
+      for(i = 0; i < n; i++) sVal[i] = (x[i] - mx) * hw + (z[i] - mz) * hu;
+      var side = Math.random() < 0.5 ? 1 : -1;
+      var m = Math.max(5, Math.floor(n * 0.15));          // 그 옆쪽에서 가장 바깥에 있는 15% 중 하나를 시작 지점으로 고른다
+      for(i = 0; i < n; i++) sTmp[i] = side * sVal[i];
+      var srt = Array.prototype.slice.call(sTmp.subarray(0, n)).sort(function(a, b){ return b - a; });
+      var thr = srt[Math.min(m, n) - 1], cand = [];
+      for(i = 0; i < n; i++) if(side * sVal[i] >= thr) cand.push(i);
+      var seed = cand[Math.floor(Math.random() * cand.length)];
+      var K = Math.max(1, Math.min(Math.round(P.spontN), Math.floor(n / 4)));
+      var ord = [];
+      for(i = 0; i < n; i++){
+        var dx = x[i] - x[seed], dy = y[i] - y[seed], dz = z[i] - z[seed];
+        ord.push([dx * dx + dy * dy + dz * dz, i]);
+      }
+      ord.sort(function(a, b){ return a[0] - b[0]; });
+      var inward = -side;                                 // 오른쪽 가장자리면 왼쪽(안쪽)으로, 왼쪽 가장자리면 오른쪽으로 돈다
+      var evAng = P.spontAngle * (0.7 + 0.6 * Math.random());
+      turnOmega = evAng * Math.PI / 180 / (TURN_DUR - TURN_RAMP / 2);   // 서서히 빨라지는 구간을 감안해 총 회전각이 목표와 같아지게 한다
+      for(i = 0; i < K; i++){ tCnt[ord[i][1]] = TURN_DUR; tDir[ord[i][1]] = inward; }
+      var waveC = WAVE_C * P.speed;
+      for(i = 0; i < n; i++){
+        var dx2 = x[i] - x[seed], dy2 = y[i] - y[seed], dz2 = z[i] - z[seed];
+        tDir[i] = inward;
+        tWait[i] = Math.max(1, Math.round(Math.sqrt(dx2 * dx2 + dy2 * dy2 + dz2 * dz2) / waveC + Math.random() * 3));
+      }
+      for(i = 0; i < K; i++){ tCnt[ord[i][1]] = TURN_DUR; tWait[ord[i][1]] = 0; }
+      turnActive = n; spontCount++;
+      spontLast.side = side; spontLast.inward = inward; spontLast.K = K; spontLast.tick = spontTick; spontLast.angle = evAng;
+    }
+
+    function step(){
+      var n = count;
+      spontTrigger(n);
+      var actNext = 0;
+      updatePredator(n);
+      var R2 = P.radius * P.radius;
+      var sd2 = P.sepDist * P.sepDist;
+      var maxS = P.speed, minS = P.speed * 0.5, maxF = P.force;
+      var knn = P.mode === 'knn';
+      var inertial = P.align === 'inertial';
+      var k = Math.min(P.k, Math.max(n - 1, 1));
+      var rin = 1 - Math.min(0.6, (40 + P.speed * 12) / Math.min(RA, RB, RC));
+      var totalNbr = 0;
+      buildGrid(n, knn);
+
+      for(var i = 0; i < n; i++){
+        var xi = x[i], yi = y[i], zi = z[i];
+        var cnt = findNeighbors(i, knn, k, R2);
+        totalNbr += cnt;
+        if(tWait[i] > 0){
+          // 전파 대기: 전환 신호가 이 새에게 도착하면(시작 지점에서의 거리 ÷ 전파 속도) 돌기 시작한다
+          tWait[i]--;
+          if(tWait[i] === 0) tCnt[i] = TURN_DUR;
+        }
+
+        var fx = 0, fy = 0, fz = 0, tqx = 0, tqy = 0, tqz = 0;
+        if(cnt > 0){
+          var sx = 0, sy = 0, sz = 0, sc = 0;
+          var ax = 0, ay = 0, az = 0, ux = 0, uy = 0, uz = 0;
+          var cx = 0, cy = 0, cz = 0;
+          for(var m = 0; m < cnt; m++){
+            var d2m = nD2[m], jn = nIdx[m];
+            cx += nDx[m]; cy += nDy[m]; cz += nDz[m];
+            var jvx = vx[jn], jvy = vy[jn], jvz = vz[jn];
+            ax += jvx; ay += jvy; az += jvz;
+            if(inertial){
+              var jl = Math.sqrt(jvx * jvx + jvy * jvy + jvz * jvz) || 1;
+              ux += jvx / jl; uy += jvy / jl; uz += jvz / jl;
+            }
+            if(d2m < sd2 && d2m > 1e-6){
+              sx -= nDx[m] / d2m; sy -= nDy[m] / d2m; sz -= nDz[m] / d2m; sc++;
+            }
+          }
+          if(sc > 0){
+            steer(sx, sy, sz, vx[i], vy[i], vz[i], maxS, maxF);
+            fx += P.wSep * st[0]; fy += P.wSep * st[1]; fz += P.wSep * st[2];
+          }
+          if(inertial){
+            // 토크 = (자기 방향 단위벡터) × (이웃 방향 단위벡터의 평균)
+            var vi = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]) || 1;
+            var hx = vx[i] / vi, hy = vy[i] / vi, hz = vz[i] / vi;
+            var mux = ux / cnt, muy = uy / cnt, muz = uz / cnt;
+            tqx = hy * muz - hz * muy;
+            tqy = hz * mux - hx * muz;
+            tqz = hx * muy - hy * mux;
+          } else {
+            steer(ax / cnt, ay / cnt, az / cnt, vx[i], vy[i], vz[i], maxS, maxF);
+            fx += P.wAli * st[0]; fy += P.wAli * st[1]; fz += P.wAli * st[2];
+          }
+          steer(cx / cnt, cy / cnt, cz / cnt, vx[i], vy[i], vz[i], maxS, maxF);
+          fx += P.wCoh * st[0]; fy += P.wCoh * st[1]; fz += P.wCoh * st[2];
+        }
+
+        // 포식자 회피
+        var capS = maxS;
+        if(P.pred){
+          var pdx = xi - pred.x, pdy = yi - pred.y, pdz = zi - pred.z;
+          var pd2 = pdx * pdx + pdy * pdy + pdz * pdz;
+          if(pd2 < P.predR * P.predR){
+            var pd = Math.sqrt(pd2) || 1;
+            capS = maxS * 1.3;
+            steer(pdx, pdy, pdz, vx[i], vy[i], vz[i], capS, maxF);
+            var fw = P.wFlee * (1 - pd / P.predR);
+            fx += fw * st[0]; fy += fw * st[1]; fz += fw * st[2];
+          }
+        }
+
+        // 중심점 유인: 중심점에서 유인 시작 거리보다 멀어지면 중심점 쪽 조향을 더하고,
+        // 시작 거리부터 150 더 멀어질 때까지 서서히 최대까지 키운다
+        if(P.roost){
+          var qdx = -xi, qdy = -yi, qdz = -zi;
+          var qd = Math.sqrt(qdx * qdx + qdy * qdy + qdz * qdz);
+          if(qd > P.roostR){
+            var qf = Math.min(1, (qd - P.roostR) / 150);
+            steer(qdx, qdy, qdz, vx[i], vy[i], vz[i], maxS, maxF);
+            fx += P.wRoost * qf * st[0]; fy += P.wRoost * qf * st[1]; fz += P.wRoost * qf * st[2];
+          }
+        }
+
+        // 구역(타원체) 가장자리에 가까울수록 중심 쪽으로 향하는 힘을 키운다
+        var rq = Math.sqrt(xi * xi / (RA * RA) + yi * yi / (RB * RB) + zi * zi / (RC * RC));
+        if(rq > rin){
+          var gx = -xi / (RA * RA), gy = -yi / (RB * RB), gz = -zi / (RC * RC);
+          var gl = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
+          var gw = TURN * Math.min(1, (rq - rin) / (1 - rin)) / gl;
+          fx += gx * gw; fy += gy * gw; fz += gz * gw;
+        }
+
+        var tx = vx[i] + fx, ty = vy[i] + fy, tz = vz[i] + fz;
+        var sp = Math.sqrt(tx * tx + ty * ty + tz * tz);
+        if(sp > capS){ var s1 = capS / sp; tx *= s1; ty *= s1; tz *= s1; }
+        else if(sp < minS){
+          if(sp < 1e-6){ tx = minS; ty = 0; tz = 0; }
+          else { var s2 = minS / sp; tx *= s2; ty *= s2; tz *= s2; }
+        }
+
+        if(inertial){
+          // 정렬 항이 속도를 최대 속도 쪽으로 밀어주지 않으므로 속도를 서서히 되돌린다
+          var sp2 = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+          var tgt = sp2 + 0.2 * (capS - sp2);
+          var s3 = tgt / sp2; tx *= s3; ty *= s3; tz *= s3;
+
+          // χ·dω/dt = J·τ − η·ω  (s = χω), 각속도 크기 상한 0.35 rad/프레임
+          var J = P.wAli * 0.06, gam = P.eta / P.chi;
+          spx[i] += J * tqx - gam * spx[i];
+          spy[i] += J * tqy - gam * spy[i];
+          spz[i] += J * tqz - gam * spz[i];
+          var omx = spx[i] / P.chi, omy = spy[i] / P.chi, omz = spz[i] / P.chi;
+          var om = Math.sqrt(omx * omx + omy * omy + omz * omz);
+          if(om > 0.35){
+            var sc2 = 0.35 / om;
+            omx *= sc2; omy *= sc2; omz *= sc2;
+            spx[i] = omx * P.chi; spy[i] = omy * P.chi; spz[i] = omz * P.chi;
+            om = 0.35;
+          }
+          if(om > 1e-9){
+            var kx = omx / om, ky = omy / om, kz = omz / om;
+            var co = Math.cos(om), so = Math.sin(om);
+            var kd = kx * tx + ky * ty + kz * tz;
+            var crx = ky * tz - kz * ty, cry = kz * tx - kx * tz, crz = kx * ty - ky * tx;
+            var rx = tx * co + crx * so + kx * kd * (1 - co);
+            var ry = ty * co + cry * so + ky * kd * (1 - co);
+            var rz = tz * co + crz * so + kz * kd * (1 - co);
+            tx = rx; ty = ry; tz = rz;
+          }
+        }
+        if(tCnt[i] > 0){
+          // 전환 중인 새: 정해진 회전 속도로 수직축 둘레를 돈다(오른쪽 회전이면 각도가 음수). 모든 새의 회전 속도가 같아 같은 반지름의 경로가 된다.
+          var ramp = (TURN_DUR - tCnt[i] + 1) / TURN_RAMP; if(ramp > 1) ramp = 1;
+          var ka = -tDir[i] * turnOmega * ramp;
+          var kc = Math.cos(ka), ks = Math.sin(ka);
+          var knx = tx * kc + tz * ks; tz = -tx * ks + tz * kc; tx = knx;
+          tCnt[i]--;
+        }
+        if(tCnt[i] > 0 || tWait[i] > 0) actNext++;
+        nvx[i] = tx; nvy[i] = ty; nvz[i] = tz;
+      }
+      turnActive = actNext;
+
+      var sux = 0, suy = 0, suz = 0;
+      for(var q = 0; q < n; q++){
+        vx[q] = nvx[q]; vy[q] = nvy[q]; vz[q] = nvz[q];
+        x[q] += vx[q]; y[q] += vy[q]; z[q] += vz[q];
+        var r2 = x[q] * x[q] / (RA * RA) + y[q] * y[q] / (RB * RB) + z[q] * z[q] / (RC * RC);
+        if(r2 > 1){
+          var f = 0.999 / Math.sqrt(r2);
+          x[q] *= f; y[q] *= f; z[q] *= f;
+          var hx2 = x[q] / (RA * RA), hy2 = y[q] / (RB * RB), hz2 = z[q] / (RC * RC);
+          var hl2 = Math.sqrt(hx2 * hx2 + hy2 * hy2 + hz2 * hz2) || 1;
+          hx2 /= hl2; hy2 /= hl2; hz2 /= hl2;
+          var vn = vx[q] * hx2 + vy[q] * hy2 + vz[q] * hz2;
+          if(vn > 0){ vx[q] -= 2 * vn * hx2; vy[q] -= 2 * vn * hy2; vz[q] -= 2 * vn * hz2; }
+        }
+        var s = Math.sqrt(vx[q] * vx[q] + vy[q] * vy[q] + vz[q] * vz[q]) || 1;
+        sux += vx[q] / s; suy += vy[q] / s; suz += vz[q] / s;
+      }
+      pol = n ? Math.sqrt(sux * sux + suy * suy + suz * suz) / n : 0;
+      avgNbr = n ? totalNbr / n : 0;
+    }
+
+
+    /* ---- 이탈도(dealignment): 각 새가 최근 약 1초 동안 무리 평균 방향에서 벗어난 시간의 비율 ----
+       Attanasi 등(2015)의 δ_i: C_i = (개체 방향)·(무리 평균 방향)이 중앙값보다 낮은 시간의 비율. 1초(60프레임) 지수 평균으로 계산한다. */
+    var dealign = new Float32Array(MAX), dCos = new Float32Array(MAX), trackDealign = false;
+    function meanHeading(){
+      var su = 0, sv = 0, sw = 0;
+      for(var i = 0; i < count; i++){
+        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]) || 1;
+        su += vx[i] / l; sv += vy[i] / l; sw += vz[i] / l;
+      }
+      var L = Math.sqrt(su * su + sv * sv + sw * sw) || 1;
+      return [su / L, sv / L, sw / L];
+    }
+    function updateDealign(){
+      var n = count;
+      if(n < 10) return;
+      var H = meanHeading(), i;
+      for(i = 0; i < n; i++){
+        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]) || 1;
+        dCos[i] = (vx[i] * H[0] + vy[i] * H[1] + vz[i] * H[2]) / l;
+      }
+      var stride = Math.max(1, Math.floor(n / 256)), smp = [];
+      for(i = 0; i < n; i += stride) smp.push(dCos[i]);
+      smp.sort(function(a, b){ return a - b; });
+      var c0 = smp[Math.floor(smp.length / 2)];
+      for(i = 0; i < n; i++) dealign[i] += ((dCos[i] < c0 ? 1 : 0) - dealign[i]) / 60;
+    }
+    // 옆쪽 가장자리(진행 방향에 수직인 수평 방향으로 가장 바깥 10%)와 안쪽 50%의 평균 이탈도
+    function dealignStats(){
+      var n = count;
+      if(n < 20) return null;
+      var H = meanHeading(), hl = Math.sqrt(H[0] * H[0] + H[2] * H[2]) || 1, nx = H[2] / hl, nz = -H[0] / hl;
+      var mx = 0, mz = 0, i;
+      for(i = 0; i < n; i++){ mx += x[i]; mz += z[i]; }
+      mx /= n; mz /= n;
+      var ord = [];
+      for(i = 0; i < n; i++) ord.push([Math.abs((x[i] - mx) * nx + (z[i] - mz) * nz), dealign[i]]);
+      ord.sort(function(a, b){ return b[0] - a[0]; });
+      var k10 = Math.max(1, Math.floor(n * 0.1)), h = Math.floor(n * 0.5), o = 0, inn = 0;
+      for(i = 0; i < k10; i++) o += ord[i][1];
+      for(i = h; i < n; i++) inn += ord[i][1];
+      return {outer: o / k10, inner: inn / (n - h)};
+    }
+
+    /* ---- 초기화, 개체 수, 표시용 ---- */
+    function spawn(i){
+      var px, py, pz;
+      do {
+        px = Math.random() * 2 - 1; py = Math.random() * 2 - 1; pz = Math.random() * 2 - 1;
+      } while(px * px + py * py + pz * pz > 1);
+      x[i] = px * RA * 0.45; y[i] = py * RB * 0.45; z[i] = pz * RC * 0.45;
+      var dxr, dyr, dzr, l2;
+      do {
+        dxr = Math.random() * 2 - 1; dyr = Math.random() * 2 - 1; dzr = Math.random() * 2 - 1;
+        l2 = dxr * dxr + dyr * dyr + dzr * dzr;
+      } while(l2 > 1 || l2 < 1e-4);
+      var l = Math.sqrt(l2), s = P.speed * (0.6 + 0.4 * Math.random());
+      if(P.alignedStart){
+        // 공통 방향(x축, 약간 위쪽)에 무작위 성분을 더해 방향이 대체로 비슷한 상태로 시작
+        var bx = 1 + 0.35 * dxr / l, by = 0.15 + 0.35 * dyr / l, bz = 0.35 * dzr / l;
+        var bl = Math.sqrt(bx * bx + by * by + bz * bz);
+        vx[i] = bx / bl * s; vy[i] = by / bl * s; vz[i] = bz / bl * s;
+      } else {
+        vx[i] = dxr / l * s; vy[i] = dyr / l * s; vz[i] = dzr / l * s;
+      }
+      spx[i] = 0; spy[i] = 0; spz[i] = 0;
+      dealign[i] = 0.5;
+      tCnt[i] = 0; tWait[i] = 0;
+    }
+    function syncCount(){
+      var target = Math.min(MAX, Math.max(1, Math.round(P.n)));
+      while(count < target){ spawn(count); count++; }
+      if(count > target) count = target;
+    }
+    function reset(){ count = 0; spontNext = -1; turnActive = 0; syncCount(); resetPred(); }
+
+    // 선택 개체(0번)에서 가장 가까운 7마리는 mark=1, 선택 개체는 mark=2
+    function updateMarks(){
+      if(trackDealign) updateDealign();
+      mark.fill(0, 0, count);
+      if(turnActive > 0) for(var q = 0; q < count; q++) if(tCnt[q] > 0) mark[q] = 3;   // 전환 중인 새
+      if(count < 1) return;
+      mark[FOCAL] = 2;
+      if(count < 2) return;
+      var kk = Math.min(FOCAL_N, count - 1), c = 0;
+      for(var j = 0; j < count; j++){
+        if(j === FOCAL) continue;
+        var dx = x[j] - x[FOCAL], dy = y[j] - y[FOCAL], dz = z[j] - z[FOCAL];
+        var d2 = dx * dx + dy * dy + dz * dz;
+        if(c < kk || d2 < fD2[c - 1]){
+          var pos = c < kk ? c : kk - 1;
+          if(c < kk) c++;
+          while(pos > 0 && fD2[pos - 1] > d2){ fIdx[pos] = fIdx[pos - 1]; fD2[pos] = fD2[pos - 1]; pos--; }
+          fIdx[pos] = j; fD2[pos] = d2;
+        }
+      }
+      for(var m = 0; m < c; m++) mark[fIdx[m]] = 1;
+    }
+
+    // 선택 개체 주변 100 이내 개체의 속도 방향을 높이 축(y) 둘레로 120도 돌린다.
+    // dir > 0: 위에서 내려다볼 때 새가 향한 방향 기준 오른쪽(시계 방향), dir < 0: 왼쪽
+    function kick(dir){
+      var a = (dir < 0 ? 1 : -1) * 2.1, c = Math.cos(a), s = Math.sin(a);
+      for(var i = 0; i < count; i++){
+        var dx = x[i] - x[FOCAL], dy = y[i] - y[FOCAL], dz = z[i] - z[FOCAL];
+        if(dx * dx + dy * dy + dz * dz < 10000){
+          var nx = vx[i] * c + vz[i] * s;
+          vz[i] = -vx[i] * s + vz[i] * c; vx[i] = nx;
+        }
+      }
+    }
+
+    reset();
+    return {
+      P: P, MAX: MAX, x: x, y: y, z: z, vx: vx, vy: vy, vz: vz, spx: spx, spy: spy, spz: spz,
+      mark: mark, pred: pred, radii: [RA, RB, RC],
+      get count(){ return count; },
+      get pol(){ return pol; },
+      get spontCount(){ return spontCount; },
+      get spontLast(){ return spontLast; },
+      get turnActive(){ return turnActive; },
+      forceSpont: function(){ spontNext = spontTick; },
+      dealign: dealign,
+      dealignStats: dealignStats,
+      setTrackDealign: function(v){ trackDealign = !!v; for(var i = 0; i < count; i++) dealign[i] = 0.5; },
+      get avgNbr(){ return avgNbr; },
+      setCount: syncCount, reset: reset, resetPred: resetPred, step: step,
+      updateMarks: updateMarks, kick: kick,
+      // 검증용: 격자 탐색 결과를 돌려준다
+      debugNeighbors: function(i, knn, k){
+        buildGrid(count, knn);
+        var kk = Math.min(k, Math.max(count - 1, 1));
+        var c = findNeighbors(i, knn, kk, P.radius * P.radius);
+        var out = [];
+        for(var m = 0; m < c; m++) out.push([nIdx[m], nD2[m]]);
+        return out;
+      }
+    };
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+
+<script>
+/* ===== 화면과 조작 ===== */
+(function(){
+  var sims = {2: createSim2D(), 3: createSim3D()};
+  var dim = 2;
+  function cur(){ return sims[dim]; }
+  function P(){ return sims[dim].P; }
+  var WORLD2 = {w: 960, h: 540};      // 2D 계산 공간(고정). 화면 크기에 맞춰 확대·축소해서 보여 준다.
+  sims[2].resize(WORLD2.w, WORLD2.h);
+  sims[2].reset();
+
+  // 처음 값(기본값) 보관
+  var DEF = {2: JSON.parse(JSON.stringify(sims[2].P)), 3: JSON.parse(JSON.stringify(sims[3].P))};
+
+  // 2D와 3D가 함께 바뀌는 값. 나머지(거리와 관련된 값 등)는 보고 있는 화면에만 적용된다.
+  var SHARED = {wSep:1, wAli:1, wCoh:1, chi:1, eta:1, speed:1, n:1, predSpeed:1, k:1, mode:1, align:1, pred:1, spont:1, spontEvery:1, spontN:1, spontAngle:1};
+  function setParam(key, val){
+    if(SHARED[key]){ sims[2].P[key] = val; sims[3].P[key] = val; }
+    else P()[key] = val;
+    if(key === 'n') cur().setCount();
+    if(typeof updateWarn === 'function' && nWarn) updateWarn();
+  }
+
+  /* --- 변수 정의 (group: 화면에 놓이는 묶음, sel = 선택 영역) --- */
+  var GROUPS = [
+    {id:'main', title:null},
+    {id:'pred', title:'포식자'},
+    {id:'turn', title:'자발적 전환'},
+    {id:'d3', title:'3D 전용'}
+  ];
+  var CFG = [
+    {key:'wSep', label:'분리 가중치', short:'분리 가중치', group:'main', min:0, max:4, step:0.1, fmt:1,
+      desc:'너무 가까운 이웃에게서 멀어지려는 힘의 세기입니다. 올리면 새들 사이 간격이 넓어지고, 낮추면 새들이 겹칩니다.'},
+    {key:'wAli', label:'정렬 가중치', short:'정렬 가중치', group:'main', min:0, max:4, step:0.1, fmt:1,
+      desc:'이웃이 향하는 방향에 맞추려는 힘의 세기입니다. 올리면 같은 방향으로 움직이는 정도가 커집니다. 0이면 방향을 맞추지 않습니다.'},
+    {key:'wCoh', label:'응집 가중치', short:'응집 가중치', group:'main', min:0, max:4, step:0.1, fmt:1,
+      desc:'이웃들이 모여 있는 쪽으로 다가가려는 힘의 세기입니다. 올리면 새들이 뭉치려 하지만, 너무 크면 다른 규칙과 부딪혀 오히려 무리가 흩어질 수 있습니다.'},
+    {key:'chi', label:'관성 χ', short:'관성 χ', group:'main', min:1, max:50, step:1, fmt:0, align:'inertial',
+      desc:'관성 모델에서 방향을 바꾸는 데 걸리는 시간을 정합니다. 올리면 방향이 더 늦게 바뀝니다.'},
+    {key:'eta', label:'감쇠 η', short:'감쇠 η', group:'main', min:0, max:3, step:0.05, fmt:2, align:'inertial',
+      desc:'관성 모델에서 방향이 지나쳤다가 돌아오는 흔들림이 줄어드는 속도를 정합니다. 올리면 흔들림이 빨리 줄고, 내리면 오래 흔들립니다.'},
+    {key:'radius', label:'인지 반경', short:'인지 반경', group:'main', only:'radius', fmt:0,
+      range:{2:[10, 200, 5], 3:[10, 300, 5]},
+      desc:'보이드 방식에서 이웃으로 보는 거리입니다. 올리면 이웃이 많아지고 무리가 더 빽빽하게 뭉치며, 계산도 오래 걸립니다.'},
+    {key:'sepDist', label:'분리 거리', short:'분리 거리', group:'main', fmt:0, range:{2:[5, 60, 1], 3:[5, 60, 1]},
+      desc:'이 거리 안으로 들어온 이웃에게만 분리 규칙이 적용됩니다. 올리면 더 멀리서부터 서로 피합니다.'},
+    {key:'speed', label:'최대 속도', short:'최대 속도', group:'main', min:1, max:8, step:0.5, fmt:1,
+      desc:'새가 낼 수 있는 가장 빠른 속도입니다. 가장 느린 속도는 그 절반이며, 새는 멈추지 않습니다.'},
+    {key:'wFlee', label:'회피 세기 (회피 가중치)', short:'회피 세기', group:'pred', fmt:1, pred:true, range:{2:[0, 8, 0.1], 3:[0, 8, 0.1]},
+      desc:'포식자가 감지 거리 안에 있을 때 도망치려는 힘의 세기입니다. 가까울수록 강하게 작용합니다. 0이면 포식자를 피하지 않습니다.'},
+    {key:'predR', label:'포식자 감지 거리', short:'감지 거리', group:'pred', fmt:0, pred:true, range:{2:[40, 300, 5], 3:[60, 500, 5]},
+      desc:'새가 포식자를 알아차리는 거리입니다.'},
+    {key:'predSpeed', label:'포식자 속도 (최대 속도 배율)', short:'속도 배율', group:'pred', min:1, max:1.6, step:0.05, fmt:2, pred:true,
+      desc:'포식자 속도가 새의 최대 속도의 몇 배인지 정합니다.'},
+    {key:'spontEvery', label:'자발적 전환의 평균 간격 (초)', short:'평균 간격(초)', group:'turn', min:2, max:60, step:1, fmt:0, spont:true,
+      desc:'전환이 시작되는 평균 간격입니다. 시작 시각은 무작위이며, 무리가 정렬되어 있을 때만 시작합니다. 한 전환이 끝나기 전에는 새 전환이 시작되지 않습니다.'},
+    {key:'spontAngle', label:'자발적 전환의 각도 (도)', short:'전환 각도(°)', group:'turn', min:20, max:180, step:5, fmt:0, spont:true,
+      desc:'한 번의 전환에서 무리가 도는 각도의 기준입니다. 실제 각도는 이 값의 70~130% 사이에서 무작위로 정해집니다.'},
+    {key:'wRoost', label:'중심점 유인 세기 (유인 가중치)', short:'유인 세기', group:'d3', min:0, max:4, step:0.1, fmt:1, dim3:true, roost:true,
+      desc:'3D 전용. 중심점으로 되돌아가려는 힘의 세기입니다.'},
+    {key:'roostR', label:'유인 시작 거리', short:'유인 거리', group:'d3', min:0, max:400, step:10, fmt:0, dim3:true, roost:true,
+      desc:'3D 전용. 중심점에서 이 거리보다 멀어지면 중심점 쪽으로 끌리기 시작합니다.'},
+    {key:'birdSize', label:'새 크기', short:'새 크기', group:'d3', min:0.5, max:4, step:0.1, fmt:1, dim3:true,
+      desc:'3D 전용. 화면에 그리는 새의 크기입니다. 움직임에는 영향이 없습니다.'},
+    {key:'n', label:'개체 수', short:'개체 수 (10–10000)', group:'sel', min:10, max:10000, step:10, fmt:0, integer:true,
+      desc:'새의 수(10~10000)입니다. 많을수록 계산이 오래 걸려 화면이 느려질 수 있습니다. 4000마리를 넘으면 컴퓨터에 따라 화면이 크게 느려질 수 있습니다.'}
+  ];
+  function rng(c){
+    if(c.range){ var r = c.range[dim]; return {min:r[0], max:r[1], step:r[2]}; }
+    return {min:c.min, max:c.max, step:c.step};
+  }
+  function pOf(c){ return c.dim3 ? sims[3].P : P(); }
+  function defOf(c){ return (c.dim3 ? DEF[3] : DEF[dim])[c.key]; }
+
+  /* --- 숫자 입력 칸 만들기 --- */
+  var ctl = {};
+  var grpEls = {};
+  var groupsBox = document.getElementById('groups');
+  GROUPS.forEach(function(g){
+    var d = document.createElement('div');
+    d.className = 'grp'; d.setAttribute('data-g', g.id);
+    d.innerHTML = (g.title ? '<h4>' + g.title + '</h4>' : '') + '<div class="rows"></div>';
+    groupsBox.appendChild(d);
+    grpEls[g.id] = d;
+  });
+
+  function fixVal(c, v){
+    var q = rng(c);
+    v = Math.min(q.max, Math.max(q.min, v));
+    v = Math.round(v / q.step) * q.step;
+    v = Math.min(q.max, Math.max(q.min, v));
+    return Number(v.toFixed(c.fmt));
+  }
+  function updateChanged(c){
+    var o = ctl[c.key];
+    var v = pOf(c)[c.key], d = defOf(c);
+    var ch = (v !== undefined && d !== undefined && Math.abs(v - d) > 1e-9);
+    o.input.classList.toggle('changed', ch);
+    if(o.rs) o.rs.classList.toggle('on', ch);
+  }
+  function setValue(c, v){
+    v = fixVal(c, v);
+    ctl[c.key].input.value = v.toFixed(c.fmt);
+    setParam(c.key, v);
+    updateChanged(c);
+  }
+
+  CFG.forEach(function(c){
+    var wrap = document.createElement('div');
+    wrap.className = 'ctl';
+    var id = 'in_' + c.key;
+    var r = rng(c);
+    var v0 = (c.dim3 ? sims[3].P : P())[c.key];
+    var isSel = c.group === 'sel';
+    wrap.innerHTML = '<label class="lab" for="'+id+'" title="'+c.label+' — '+c.desc+'"><span>'+c.short+'</span></label>' +
+      '<input type="number" id="'+id+'" min="'+r.min+'" max="'+r.max+'" step="'+r.step+'" value="'+v0+'">' +
+      (isSel ? '<span></span>' : '<button type="button" class="rs" title="기본값으로" aria-label="'+c.label+' 기본값으로">↺</button>');
+    (isSel ? document.getElementById('selRows') : grpEls[c.group].querySelector('.rows')).appendChild(wrap);
+    var input = wrap.querySelector('input');
+    var lab = wrap.querySelector('.lab');
+    var rs = wrap.querySelector('.rs');
+    ctl[c.key] = {wrap:wrap, input:input, rs:rs, group:c.group};
+
+    // 직접 입력: 범위 안의 값이면 바로 반영
+    input.addEventListener('input', function(){
+      var v = parseFloat(input.value), q = rng(c);
+      if(!isNaN(v) && v >= q.min - 1e-9 && v <= q.max + 1e-9){ setParam(c.key, c.integer ? Math.round(v) : v); updateChanged(c); }
+    });
+    input.addEventListener('change', function(){
+      var v = parseFloat(input.value);
+      if(isNaN(v)) v = pOf(c)[c.key];
+      setValue(c, v);
+    });
+    if(rs) rs.addEventListener('click', function(){ setValue(c, defOf(c)); });
+
+    // 이름을 좌우로 드래그해서 값 바꾸기 (선택 영역의 개체 수는 제외)
+    if(!isSel){
+      lab.addEventListener('pointerdown', function(e){
+        if(e.button !== 0) return;
+        e.preventDefault();
+        var startX = e.clientX, startV = pOf(c)[c.key], moved = false;
+        lab.setPointerCapture(e.pointerId);
+        function move(ev){
+          var dx = ev.clientX - startX;
+          if(Math.abs(dx) > 3) moved = true;
+          if(!moved) return;
+          var q = rng(c);
+          setValue(c, startV + Math.round(dx / 5) * q.step);
+        }
+        function up(ev){
+          lab.removeEventListener('pointermove', move);
+          lab.removeEventListener('pointerup', up);
+          lab.removeEventListener('pointercancel', up);
+          if(!moved){ input.focus(); input.select(); }
+        }
+        lab.addEventListener('pointermove', move);
+        lab.addEventListener('pointerup', up);
+        lab.addEventListener('pointercancel', up);
+      });
+    }
+  });
+
+  // 화면(2D/3D)을 바꿀 때 범위와 값을 그 화면의 값으로 갱신
+  function refreshControls(){
+    CFG.forEach(function(c){
+      var v = pOf(c)[c.key];
+      var r = rng(c), o = ctl[c.key];
+      o.input.min = r.min; o.input.max = r.max; o.input.step = r.step;
+      o.input.value = Number(v).toFixed(c.fmt);
+      updateChanged(c);
+    });
+    document.getElementById('kInput').value = P().k;
+  }
+  function updateVisibility(){
+    var p = P();
+    CFG.forEach(function(c){
+      var hide = (c.only && c.only !== p.mode) || (c.align && c.align !== p.align) ||
+                 (c.pred && !p.pred) || (c.spont && !p.spont) || (c.roost && !p.roost) || (c.dim3 && dim !== 3);
+      ctl[c.key].wrap.classList.toggle('hidden', !!hide);
+    });
+    GROUPS.forEach(function(g){
+      var rows = grpEls[g.id].querySelectorAll('.ctl');
+      var any = false;
+      for(var i = 0; i < rows.length; i++) if(!rows[i].classList.contains('hidden')) any = true;
+      grpEls[g.id].classList.toggle('hidden', !any);
+    });
+  }
+
+  // 변수 설명 목록 (설명 탭)
+  (function(){
+    var dl = document.getElementById('varlist');
+    var extra = [
+      {label:'이웃 수 N', desc:'"가장 가까운 N마리" 방식에서 이웃으로 보는 새의 수입니다(1~20, 기본 7). 이웃 선택 방식 항목에서 정합니다.'}
+    ];
+    CFG.concat(extra).forEach(function(c){
+      var dt = document.createElement('dt'); dt.textContent = c.label;
+      var dd = document.createElement('dd'); dd.textContent = c.desc;
+      dl.appendChild(dt); dl.appendChild(dd);
+    });
+  })();
+
+  /* --- 라디오·체크박스 --- */
+  var kInput = document.getElementById('kInput');
+  var radios = {
+    mode: Array.prototype.slice.call(document.querySelectorAll('input[name=mode]')),
+    align: Array.prototype.slice.call(document.querySelectorAll('input[name=align]'))
+  };
+  function selectRadio(name, value){
+    radios[name].forEach(function(r){ r.checked = (r.value === value); });
+    setParam(name, value);
+    updateVisibility();
+  }
+  radios.mode.forEach(function(r){ r.addEventListener('change', function(){ if(r.checked) selectRadio('mode', r.value); }); });
+  radios.align.forEach(function(r){ r.addEventListener('change', function(){ if(r.checked) selectRadio('align', r.value); }); });
+  // N 칸을 누르거나 값을 바꾸면 "가장 가까운 N마리" 방식이 선택된다
+  kInput.addEventListener('focus', function(){ selectRadio('mode', 'knn'); });
+  kInput.addEventListener('input', function(){
+    var v = parseInt(kInput.value, 10);
+    if(!isNaN(v) && v >= 1 && v <= 20){ setParam('k', v); selectRadio('mode', 'knn'); }
+  });
+  kInput.addEventListener('change', function(){
+    var v = parseInt(kInput.value, 10);
+    if(isNaN(v)) v = P().k;
+    v = Math.min(20, Math.max(1, v));
+    kInput.value = v; setParam('k', v);
+  });
+
+  var predOn = document.getElementById('predOn');
+  predOn.addEventListener('change', function(){
+    setParam('pred', predOn.checked);
+    if(predOn.checked){ sims[2].resetPred(); sims[3].resetPred(); }
+    updateVisibility();
+  });
+  var spontOn = document.getElementById('spontOn');
+  spontOn.addEventListener('change', function(){ setParam('spont', spontOn.checked); updateVisibility(); });
+  document.getElementById('roostOn').addEventListener('change', function(e){
+    sims[3].P.roost = e.target.checked; updateVisibility();
+  });
+  document.getElementById('alignedStart').addEventListener('change', function(e){
+    sims[3].P.alignedStart = e.target.checked;
+  });
+  var autoRot = false, follow = true;
+  var view = {shadow:true, perf:false, dealign:false};   // 표시 옵션
+  document.getElementById('shadowOn').addEventListener('change', function(e){ view.shadow = e.target.checked; });
+  document.getElementById('dealignOn').addEventListener('change', function(e){
+    view.dealign = e.target.checked;
+    sims[2].setTrackDealign(view.dealign); sims[3].setTrackDealign(view.dealign);
+    document.getElementById('dealignBox').hidden = !view.dealign;
+    if(typeof dAvg !== 'undefined'){ dAvg.o = null; dAvg.i = null; }
+  });
+  document.getElementById('perfOn').addEventListener('change', function(e){ view.perf = e.target.checked; applyPerf(); if(typeof updateWarn === 'function' && nWarn) updateWarn(); });
+  document.getElementById('autoRot').addEventListener('change', function(e){ autoRot = e.target.checked; });
+  document.getElementById('follow').addEventListener('change', function(e){ follow = e.target.checked; });
+
+  /* --- Basic / Expert / 설명 탭 --- */
+  var tab = 'basic', mode = 'basic';
+  var modeNote = document.getElementById('modeNote');
+  var NOTE_BASIC = '기본값으로 실행 중입니다. 값을 바꾸려면 Expert를 누르세요.';
+  var NOTE_EXPERT = '값을 직접 바꿀 수 있습니다. Basic으로 가면 기본값으로 돌아갑니다.';
+  var noteTimer = null;
+  function setNote(text, flash){
+    modeNote.textContent = text;
+    modeNote.classList.toggle('flash', !!flash);
+    if(noteTimer) clearTimeout(noteTimer);
+    if(flash) noteTimer = setTimeout(function(){ setNote(mode === 'expert' ? NOTE_EXPERT : NOTE_BASIC, false); }, 4500);
+  }
+  function countChanged(){
+    var n = 0;
+    CFG.forEach(function(c){
+      if(c.group === 'sel') return;
+      [2, 3].forEach(function(d){
+        var v = sims[d].P[c.key], df = DEF[d][c.key];
+        if(v !== undefined && df !== undefined && Math.abs(v - df) > 1e-9){ n++; }
+      });
+    });
+    return n;
+  }
+  function resetAllParams(){
+    CFG.forEach(function(c){
+      if(c.group === 'sel') return;
+      [2, 3].forEach(function(d){
+        if(DEF[d][c.key] !== undefined) sims[d].P[c.key] = DEF[d][c.key];
+      });
+    });
+    refreshControls();
+  }
+  function setTab(t){
+    var flashText = null;
+    if(t === 'basic' && mode === 'expert'){
+      var n = countChanged();
+      if(n > 0){ resetAllParams(); flashText = 'Expert에서 바꾼 값 ' + n + '개를 기본값으로 되돌렸습니다.'; }
+    }
+    if(t === 'basic' || t === 'expert') mode = t;
+    tab = t;
+    document.body.setAttribute('data-tab', t);
+    Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function(b){
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-tab') === t));
+    });
+    document.getElementById('ctlArea').hidden = (t === 'help');
+    document.getElementById('helpArea').hidden = (t !== 'help');
+    document.getElementById('expertArea').hidden = (mode !== 'expert');
+    if(flashText) setNote(flashText, true);
+    else if(t !== 'help') setNote(mode === 'expert' ? NOTE_EXPERT : NOTE_BASIC, false);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function(b){
+    b.addEventListener('click', function(){ setTab(b.getAttribute('data-tab')); });
+  });
+  document.getElementById('resetAll').addEventListener('click', function(){
+    var n = countChanged();
+    resetAllParams();
+    setNote(n > 0 ? '바뀐 값 ' + n + '개를 기본값으로 되돌렸습니다.' : '이미 모두 기본값입니다.', true);
+  });
+  var panelBtn = document.getElementById('togglePanel');
+  panelBtn.addEventListener('click', function(){
+    var hidden = document.body.classList.toggle('panel-hidden');
+    panelBtn.textContent = hidden ? '설정 보이기' : '설정 숨기기';
+    panelBtn.setAttribute('aria-pressed', String(hidden));
+  });
+
+  /* --- 테마 색 --- */
+  var theme = {sky:'#eef2f7', bird:'#1b2230', bird3:'#34435d', ground:'#e3e8ef', shadowA:0.2, g1:'#c3cad5', g2:'#dbe0e8'};
+  function readTheme(){
+    var cs = getComputedStyle(document.documentElement);
+    theme.sky = cs.getPropertyValue('--sky').trim() || theme.sky;
+    theme.bird = cs.getPropertyValue('--bird').trim() || theme.bird;
+    theme.bird3 = cs.getPropertyValue('--bird3').trim() || theme.bird3;
+    theme.ground = cs.getPropertyValue('--ground').trim() || theme.ground;
+    theme.shadowA = parseFloat(cs.getPropertyValue('--shadowA')) || theme.shadowA;
+    theme.g1 = cs.getPropertyValue('--grid1').trim() || theme.g1;
+    theme.g2 = cs.getPropertyValue('--grid2').trim() || theme.g2;
+  }
+  readTheme();
+
+  var stage = document.getElementById('stage');
+
+  /* ===== 2D 화면: 고정 공간(960×540)을 화면 크기에 맞춰 확대·축소 ===== */
+  var c2 = document.getElementById('c2');
+  var ctx = c2.getContext('2d');
+  var FOCAL_COLOR = '#e03e3e', NEAR_COLOR = '#f2a1a1', PRED_COLOR = '#d9822b';
+  var dpr = 1, scale2 = 1;
+  function resize2(){
+    var w = stage.clientWidth, h = stage.clientHeight;
+    if(w < 2 || h < 2) return;
+    var s = Math.min((w - 2) / WORLD2.w, (h - 2) / WORLD2.h);
+    if(s <= 0) return;
+    var cw = Math.max(2, Math.floor(WORLD2.w * s)), ch = Math.max(2, Math.floor(WORLD2.h * s));
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c2.style.width = cw + 'px'; c2.style.height = ch + 'px';
+    c2.width = Math.round(cw * dpr); c2.height = Math.round(ch * dpr);
+    scale2 = cw / WORLD2.w;
+    ctx.setTransform(dpr * scale2, 0, 0, dpr * scale2, 0, 0);
+  }
+  // 삼각형 수천 개를 경로 하나로 채우면 그리는 시간이 개수보다 훨씬 빠르게 늘어나므로, 64개씩 나눠서 채운다
+  var CHUNK2 = 64;
+  function drawGroup2(sim, markValue, color, scale){
+    var x = sim.x, y = sim.y, vx = sim.vx, vy = sim.vy, mark = sim.mark, n = sim.count;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    var inPath = 0;
+    for(var i = 0; i < n; i++){
+      if(mark[i] !== markValue) continue;
+      var a = Math.atan2(vy[i], vx[i]);
+      var c = Math.cos(a), s = Math.sin(a);
+      var px = x[i], py = y[i];
+      ctx.moveTo(px + c * 6 * scale, py + s * 6 * scale);
+      ctx.lineTo(px - (c * 4 + s * 2.5) * scale, py - (s * 4 - c * 2.5) * scale);
+      ctx.lineTo(px - (c * 4 - s * 2.5) * scale, py - (s * 4 + c * 2.5) * scale);
+      ctx.closePath();
+      if(++inPath >= CHUNK2){ ctx.fill(); ctx.beginPath(); inPath = 0; }
+    }
+    if(inPath > 0) ctx.fill();
+  }
+  function draw2(){
+    var sim = sims[2], W = WORLD2.w, H = WORLD2.h;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = theme.sky;
+    ctx.fillRect(0, 0, W, H);
+    drawGroup2(sim, 0, theme.bird, 1);
+    drawGroup2(sim, 1, NEAR_COLOR, 1.2);
+    drawGroup2(sim, 2, FOCAL_COLOR, 1.6);
+    if(sim.P.pred){
+      var p = sim.pred;
+      ctx.strokeStyle = 'rgba(217,130,43,0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, sim.P.predR, 0, Math.PI * 2); ctx.stroke();
+      var a = Math.atan2(p.vy, p.vx), c = Math.cos(a), s = Math.sin(a), k = 2.6;
+      ctx.fillStyle = PRED_COLOR;
+      ctx.beginPath();
+      ctx.moveTo(p.x + c * 6 * k, p.y + s * 6 * k);
+      ctx.lineTo(p.x - (c * 4 + s * 2.5) * k, p.y - (s * 4 - c * 2.5) * k);
+      ctx.lineTo(p.x - (c * 4 - s * 2.5) * k, p.y - (s * 4 + c * 2.5) * k);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  /* ===== 3D 화면 (처음 3D로 바꿀 때 준비) ===== */
+  var T = null;          // 3D 관련 객체 모음
+  var threeFailed = false, failMsg = '', failShown = false;
+  function showMsg(text){
+    var d = document.createElement('div');
+    d.className = 'msg'; d.textContent = text;
+    document.getElementById('v3').appendChild(d);
+  }
+  // 3D 화면으로 바꿨는데 WebGL을 쓸 수 없으면 안내 문구를 보여 준다
+  function showFailIfNeeded(){
+    if(threeFailed && !failShown){ failShown = true; showMsg(failMsg); }
+  }
+  function initThree(){
+    if(T || threeFailed) return;
+    var host = document.getElementById('v3');
+    if(typeof THREE === 'undefined'){ threeFailed = true; failMsg = '3D 라이브러리(Three.js)를 불러오지 못했습니다. 네트워크 연결을 확인해 주세요. 2D 화면은 그대로 사용할 수 있습니다.'; return; }
+    var sim = sims[3];
+    var renderer;
+    // 화면 밀도가 높은(Retina 등) 화면에서는 이미 촘촘해서 안티에일리어싱(MSAA)의 이득이 적고 비용은 크므로 끈다. 그래픽 카드가 여러 개면 성능이 높은 쪽을 요청한다.
+    try { renderer = new THREE.WebGLRenderer({antialias: (window.devicePixelRatio || 1) < 1.5, powerPreference: 'high-performance'}); }
+    catch(e){ threeFailed = true; failMsg = '이 브라우저에서 WebGL을 사용할 수 없어 3D 화면을 표시할 수 없습니다. 2D 화면은 그대로 사용할 수 있습니다.'; return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    host.appendChild(renderer.domElement);
+    var canvas = renderer.domElement;
+
+    var scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0xeef2f7, 700, 3300);
+    var camera = new THREE.PerspectiveCamera(55, 1, 1, 8000);
+    // 조명: 위쪽(밝음)과 아래쪽(어두움)의 차이를 주는 반구 조명 + 한쪽에서 비추는 직사광
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xa9b3c4, 0.65));
+    var sun = new THREE.DirectionalLight(0xffffff, 0.6);
+    sun.position.set(0.5, 1, 0.35);
+    scene.add(sun);
+
+    // 새 모양: 코, 양 날개 끝, 등 쪽 꼭짓점으로 이루어진 뾰족한 사면체
+    var A = [0, 0, 5], B = [-3.2, 0, -2.5], C = [3.2, 0, -2.5], D = [0, 1.4, -1.5];
+    var tris = [A, B, D,  A, D, C,  B, C, D,  A, C, B];
+    var pos = new Float32Array(tris.length * 3);
+    tris.forEach(function(v, i){ pos[i * 3] = v[0]; pos[i * 3 + 1] = v[1]; pos[i * 3 + 2] = v[2]; });
+    var birdGeo = new THREE.BufferGeometry();
+    birdGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    birdGeo.computeVertexNormals();
+    var mesh = new THREE.InstancedMesh(birdGeo, new THREE.MeshLambertMaterial({side: THREE.DoubleSide}), sim.MAX);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = false;
+    // 색 버퍼를 최대 개체 수 크기로 미리 만든다(개체 수가 적을 때 만들어지면 그 크기에 고정되어 늘어난 개체의 색이 없어진다)
+    mesh.setColorAt(0, new THREE.Color('#1b2230'));
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    scene.add(mesh);
+
+    // 바닥면과 그림자: 새를 바닥에 수직으로 투영한 납작한 모양을 반투명 검정으로 그린다
+    var groundY = -sim.radii[1] * 1.15;
+    var groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.MeshBasicMaterial({color: 0xe3e8ef}));
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.y = groundY - 1;
+    scene.add(groundMesh);
+    // 그림자 모양: 새를 위에서 본 윤곽(코, 양 날개 끝)과 같은 삼각형 1개
+    var shadowGeo = new THREE.BufferGeometry();
+    shadowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]]), 3));
+    var shadowMesh = new THREE.InstancedMesh(shadowGeo, new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide}), sim.MAX);
+    shadowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    shadowMesh.frustumCulled = false;
+    shadowMesh.renderOrder = 1;
+    scene.add(shadowMesh);
+
+    var predMesh = new THREE.Mesh(birdGeo, new THREE.MeshLambertMaterial({color: 0xd9822b, side: THREE.DoubleSide}));
+    predMesh.visible = false; scene.add(predMesh);
+    var predSphere = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10),
+      new THREE.MeshBasicMaterial({color: 0xd9822b, wireframe: true, transparent: true, opacity: 0.1, fog: false}));
+    predSphere.visible = false; scene.add(predSphere);
+
+    // 중심점 표시: 구역 중심의 작은 다면체와 바닥까지 이어지는 세로선
+    var roostMesh = new THREE.Mesh(new THREE.OctahedronGeometry(8), new THREE.MeshBasicMaterial({color: 0x2f9e6e, fog: false}));
+    roostMesh.visible = false; scene.add(roostMesh);
+    var roostLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -sim.radii[1] * 1.15, 0)]),
+      new THREE.LineBasicMaterial({color: 0x2f9e6e, transparent: true, opacity: 0.5, fog: false}));
+    roostLine.visible = false; scene.add(roostLine);
+
+    T = {renderer:renderer, scene:scene, camera:camera, mesh:mesh, shadowMesh:shadowMesh, groundMesh:groundMesh, groundY:groundY,
+         predMesh:predMesh, predSphere:predSphere,
+         roostMesh:roostMesh, roostLine:roostLine, grid:null, gridKey:'',
+         colBird:new THREE.Color('#1b2230'), colFocal:new THREE.Color(FOCAL_COLOR), colNear:new THREE.Color(NEAR_COLOR), colHot:new THREE.Color('#1e9e6a'), colTurn:new THREE.Color('#f0b429'),
+         colorState:new Uint8Array(sim.MAX).fill(255), forceRecolor:true,
+         cam:{az:0.7, el:0.26, dist:720, tx:0, ty:0, tz:0}, centroid:{x:0, y:0, z:0}};
+
+    // ---- 2D 화면도 WebGL로 그린다: 삼각형 수천 개를 캔버스 2D의 경로로 그리면 개수가 늘 때 크게 느려지기 때문 ----
+    var sim2 = sims[2];
+    var scene2 = new THREE.Scene();
+    var cam2 = new THREE.OrthographicCamera(0, WORLD2.w, 0, WORLD2.h, 0.1, 100);   // 위쪽이 y=0인 화면 좌표
+    cam2.position.set(0, 0, 10);
+    var geo2 = new THREE.BufferGeometry();
+    geo2.setAttribute('position', new THREE.BufferAttribute(new Float32Array([6, 0, 0, -4, 2.5, 0, -4, -2.5, 0]), 3));
+    var mesh2 = new THREE.InstancedMesh(geo2, new THREE.MeshBasicMaterial({side: THREE.DoubleSide}), sim2.MAX);
+    mesh2.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh2.frustumCulled = false;
+    mesh2.setColorAt(0, new THREE.Color('#1b2230'));
+    mesh2.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    scene2.add(mesh2);
+    var border2 = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(WORLD2.w, 0, 0), new THREE.Vector3(WORLD2.w, WORLD2.h, 0), new THREE.Vector3(0, WORLD2.h, 0)]),
+      new THREE.LineBasicMaterial({color: 0xc3cad5}));
+    scene2.add(border2);
+    var pred2 = new THREE.Mesh(geo2, new THREE.MeshBasicMaterial({color: 0xd9822b, side: THREE.DoubleSide}));
+    pred2.visible = false; pred2.position.z = 0.5; scene2.add(pred2);
+    var circ = [];
+    for(var qi = 0; qi <= 64; qi++){ var aa = qi / 64 * 2 * Math.PI; circ.push(new THREE.Vector3(Math.cos(aa), Math.sin(aa), 0)); }
+    var ring2 = new THREE.Line(new THREE.BufferGeometry().setFromPoints(circ), new THREE.LineBasicMaterial({color: 0xd9822b, transparent: true, opacity: 0.4}));
+    ring2.visible = false; ring2.position.z = 0.4; scene2.add(ring2);
+    T.s2 = {scene: scene2, camera: cam2, mesh: mesh2, pred: pred2, ring: ring2, border: border2,
+            colBird: new THREE.Color('#1b2230'), colorState: new Uint8Array(sim2.MAX).fill(255), forceRecolor: true};
+
+    /* 카메라 조작: 드래그 회전, 휠·핀치 확대 */
+    var pointers = {}, pinchDist = 0, cam = T.cam;
+    canvas.addEventListener('pointerdown', function(e){
+      canvas.setPointerCapture(e.pointerId);
+      pointers[e.pointerId] = {x: e.clientX, y: e.clientY};
+      var ids = Object.keys(pointers);
+      if(ids.length === 2){
+        var a = pointers[ids[0]], b = pointers[ids[1]];
+        pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+      }
+    });
+    canvas.addEventListener('pointermove', function(e){
+      var p = pointers[e.pointerId];
+      if(!p) return;
+      var ids = Object.keys(pointers);
+      if(ids.length === 1){
+        cam.az -= (e.clientX - p.x) * 0.006;
+        cam.el += (e.clientY - p.y) * 0.006;
+        cam.el = Math.max(-1.4, Math.min(1.4, cam.el));
+      } else if(ids.length === 2){
+        pointers[e.pointerId] = {x: e.clientX, y: e.clientY};
+        var a = pointers[ids[0]], b = pointers[ids[1]];
+        var d = Math.hypot(a.x - b.x, a.y - b.y);
+        if(pinchDist > 0) cam.dist = Math.max(300, Math.min(3500, cam.dist * pinchDist / d));
+        pinchDist = d;
+        return;
+      }
+      pointers[e.pointerId] = {x: e.clientX, y: e.clientY};
+    });
+    function endPointer(e){ delete pointers[e.pointerId]; pinchDist = 0; }
+    canvas.addEventListener('pointerup', endPointer);
+    canvas.addEventListener('pointercancel', endPointer);
+    canvas.addEventListener('wheel', function(e){
+      e.preventDefault();
+      cam.dist = Math.max(300, Math.min(3500, cam.dist * Math.exp(e.deltaY * 0.001)));
+    }, {passive: false});
+    applyTheme3();
+    resizeGL();
+  }
+  // 화면 크기가 바뀌면 3D 카메라 비율과 2D 카메라 범위(계산 공간 960×540을 비율 그대로 맞춤)를 함께 갱신한다
+  function resizeGL(){
+    if(!T) return;
+    var w = stage.clientWidth, h = stage.clientHeight;
+    if(w < 2 || h < 2) return;
+    T.renderer.setSize(w, h, false);
+    T.camera.aspect = w / h;
+    T.camera.updateProjectionMatrix();
+    var s = Math.min((w - 2) / WORLD2.w, (h - 2) / WORLD2.h);
+    if(s > 0){
+      var vw = w / s, vh = h / s, c = T.s2.camera;
+      c.left = WORLD2.w / 2 - vw / 2; c.right = WORLD2.w / 2 + vw / 2;
+      c.top = WORLD2.h / 2 - vh / 2; c.bottom = WORLD2.h / 2 + vh / 2;
+      c.updateProjectionMatrix();
+    }
+  }
+  // 성능 우선: 화면 해상도를 1배로 낮추고 그림자를 끈다
+  function applyPerf(){
+    if(!T) return;
+    T.renderer.setPixelRatio(view.perf ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    resizeGL();
+  }
+  function applyTheme3(){
+    if(!T) return;
+    T.scene.fog.color.set(theme.sky);
+    T.renderer.setClearColor(new THREE.Color(theme.sky), 1);
+    var nb = new THREE.Color(theme.bird3);
+    if(!nb.equals(T.colBird)){ T.colBird.copy(nb); T.forceRecolor = true; }
+    T.groundMesh.material.color.set(theme.ground);
+    T.shadowMesh.material.opacity = theme.shadowA;
+    var nb2 = new THREE.Color(theme.bird);
+    if(!nb2.equals(T.s2.colBird)){ T.s2.colBird.copy(nb2); T.s2.forceRecolor = true; }
+    T.s2.border.material.color.set(theme.g1);
+    var key = theme.g1 + theme.g2;
+    if(key !== T.gridKey){
+      T.gridKey = key;
+      if(T.grid){ T.scene.remove(T.grid); T.grid.geometry.dispose(); T.grid.material.dispose(); }
+      T.grid = new THREE.GridHelper(1500, 30, new THREE.Color(theme.g1), new THREE.Color(theme.g2));
+      T.grid.position.y = T.groundY;
+      T.scene.add(T.grid);
+    }
+  }
+  function updateInstances3(){
+    var sim = sims[3], n = sim.count, mesh = T.mesh;
+    mesh.count = n;
+    var arr = mesh.instanceMatrix.array;
+    var sh = view.shadow && !view.perf, sarr = T.shadowMesh.instanceMatrix.array, GY = T.groundY + 0.6;
+    T.shadowMesh.visible = sh; T.groundMesh.visible = true;
+    T.shadowMesh.count = n;
+    var X = sim.x, Y = sim.y, Z = sim.z, VX = sim.vx, VY = sim.vy, VZ = sim.vz, M = sim.mark;
+    var size = sim.P.birdSize, colorChanged = false, sumX = 0, sumY = 0, sumZ = 0;
+    var useD = view.dealign, dA = sim.dealign, ca = mesh.instanceColor ? mesh.instanceColor.array : null, HOT = T.colHot;
+    for(var i = 0; i < n; i++){
+      sumX += X[i]; sumY += Y[i]; sumZ += Z[i];
+      var vx = VX[i], vy = VY[i], vz = VZ[i];
+      var l = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1;
+      var fx = vx / l, fy = vy / l, fz = vz / l;
+      // 몸의 좌우 축 = (위쪽) × (진행 방향), 위쪽 축 = 진행 방향 × 좌우 축
+      var rl = Math.sqrt(fz * fz + fx * fx), rx, ry = 0, rz;
+      if(rl < 1e-4){ rx = 1; rz = 0; } else { rx = fz / rl; rz = -fx / rl; }
+      var ux = fy * rz - fz * ry, uy = fz * rx - fx * rz, uz = fx * ry - fy * rx;
+      var mk = M[i];
+      var s = size * (mk === 2 ? 1.9 : (mk === 1 || mk === 3 ? 1.35 : 1));
+      var o = i * 16;
+      arr[o] = rx * s; arr[o + 1] = ry * s; arr[o + 2] = rz * s; arr[o + 3] = 0;
+      arr[o + 4] = ux * s; arr[o + 5] = uy * s; arr[o + 6] = uz * s; arr[o + 7] = 0;
+      arr[o + 8] = fx * s; arr[o + 9] = fy * s; arr[o + 10] = fz * s; arr[o + 11] = 0;
+      arr[o + 12] = X[i]; arr[o + 13] = Y[i]; arr[o + 14] = Z[i]; arr[o + 15] = 1;
+      if(sh){
+        sarr[o] = rx * s; sarr[o + 1] = 0; sarr[o + 2] = rz * s; sarr[o + 3] = 0;
+        sarr[o + 4] = ux * s; sarr[o + 5] = 0; sarr[o + 6] = uz * s; sarr[o + 7] = 0;
+        sarr[o + 8] = fx * s; sarr[o + 9] = 0; sarr[o + 10] = fz * s; sarr[o + 11] = 0;
+        sarr[o + 12] = X[i]; sarr[o + 13] = GY; sarr[o + 14] = Z[i]; sarr[o + 15] = 1;
+      }
+      if(useD && ca){
+        // 이탈도 색: 안쪽 새(약 0.4)는 원래 색, 자주 벗어나는 새(0.8 이상)는 초록
+        var td = (dA[i] - 0.4) * 2.5; td = td < 0 ? 0 : (td > 1 ? 1 : td);
+        var bc = mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : T.colBird)), tt = mk === 0 ? td : 0;
+        ca[3 * i] = bc.r + (HOT.r - bc.r) * tt; ca[3 * i + 1] = bc.g + (HOT.g - bc.g) * tt; ca[3 * i + 2] = bc.b + (HOT.b - bc.b) * tt;
+        T.colorState[i] = 254; colorChanged = true;
+      } else if(T.forceRecolor || T.colorState[i] !== mk){
+        T.colorState[i] = mk;
+        mesh.setColorAt(i, mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : T.colBird)));
+        colorChanged = true;
+      }
+    }
+    T.forceRecolor = false;
+    if(sh){
+      var smx = T.shadowMesh.instanceMatrix;
+      smx.updateRange.offset = 0; smx.updateRange.count = n * 16; smx.needsUpdate = true;
+    }
+    if(n > 0){ T.centroid.x = sumX / n; T.centroid.y = sumY / n; T.centroid.z = sumZ / n; }
+    // 개체 수만큼만 GPU로 올린다(버퍼는 최대 개체 수 크기로 만들어져 있으므로 범위를 지정하지 않으면 매 프레임 전체를 올린다)
+    var imx = mesh.instanceMatrix;
+    imx.updateRange.offset = 0; imx.updateRange.count = n * 16; imx.needsUpdate = true;
+    if(colorChanged && mesh.instanceColor){
+      var icl = mesh.instanceColor;
+      icl.updateRange.offset = 0; icl.updateRange.count = n * 3; icl.needsUpdate = true;
+    }
+
+    T.roostMesh.visible = sim.P.roost; T.roostLine.visible = sim.P.roost;
+    var pr = sim.pred, on = sim.P.pred;
+    T.predMesh.visible = on; T.predSphere.visible = on;
+    if(on){
+      var ps = Math.max(size * 3, 4);
+      T.predMesh.scale.set(ps, ps, ps);
+      T.predMesh.position.set(pr.x, pr.y, pr.z);
+      T.predMesh.lookAt(pr.x + pr.vx, pr.y + pr.vy, pr.z + pr.vz);
+      T.predSphere.position.set(pr.x, pr.y, pr.z);
+      T.predSphere.scale.set(sim.P.predR, sim.P.predR, sim.P.predR);
+    }
+  }
+  function updateInstances2(){
+    var sim = sims[2], S = T.s2, n = sim.count, mesh = S.mesh;
+    mesh.count = n;
+    var arr = mesh.instanceMatrix.array;
+    var X = sim.x, Y = sim.y, VX = sim.vx, VY = sim.vy, M = sim.mark, changed = false;
+    var useD = view.dealign, dA = sim.dealign, ca = mesh.instanceColor ? mesh.instanceColor.array : null, HOT = T.colHot;
+    for(var i = 0; i < n; i++){
+      var vx = VX[i], vy = VY[i];
+      var l = Math.sqrt(vx * vx + vy * vy) || 1;
+      var c = vx / l, s = vy / l, mk = M[i];
+      var sc = mk === 2 ? 1.6 : (mk === 1 || mk === 3 ? 1.2 : 1);
+      var o = i * 16;
+      arr[o] = c * sc; arr[o + 1] = s * sc; arr[o + 2] = 0; arr[o + 3] = 0;
+      arr[o + 4] = -s * sc; arr[o + 5] = c * sc; arr[o + 6] = 0; arr[o + 7] = 0;
+      arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = 1; arr[o + 11] = 0;
+      arr[o + 12] = X[i]; arr[o + 13] = Y[i]; arr[o + 14] = 0; arr[o + 15] = 1;
+      if(useD && ca){
+        var td = (dA[i] - 0.4) * 2.5; td = td < 0 ? 0 : (td > 1 ? 1 : td);
+        var bc = mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : S.colBird)), tt = mk === 0 ? td : 0;
+        ca[3 * i] = bc.r + (HOT.r - bc.r) * tt; ca[3 * i + 1] = bc.g + (HOT.g - bc.g) * tt; ca[3 * i + 2] = bc.b + (HOT.b - bc.b) * tt;
+        S.colorState[i] = 254; changed = true;
+      } else if(S.forceRecolor || S.colorState[i] !== mk){
+        S.colorState[i] = mk;
+        mesh.setColorAt(i, mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : S.colBird)));
+        changed = true;
+      }
+    }
+    S.forceRecolor = false;
+    var imx = mesh.instanceMatrix;
+    imx.updateRange.offset = 0; imx.updateRange.count = n * 16; imx.needsUpdate = true;
+    if(changed){
+      var icl = mesh.instanceColor;
+      icl.updateRange.offset = 0; icl.updateRange.count = n * 3; icl.needsUpdate = true;
+    }
+    var pr = sim.pred, on = sim.P.pred;
+    S.pred.visible = on; S.ring.visible = on;
+    if(on){
+      S.pred.scale.set(2.6, 2.6, 1);
+      S.pred.position.set(pr.x, pr.y, 0.5);
+      S.pred.rotation.z = Math.atan2(pr.vy, pr.vx);
+      S.ring.position.set(pr.x, pr.y, 0.4);
+      S.ring.scale.set(sim.P.predR, sim.P.predR, 1);
+    }
+  }
+  function render2gl(){
+    if(!T) return;
+    updateInstances2();
+    T.renderer.render(T.s2.scene, T.s2.camera);
+  }
+  function render3(){
+    if(!T) return;
+    updateInstances3();
+    var cam = T.cam, c = T.centroid;
+    if(autoRot) cam.az += 0.003;
+    // 카메라 목표점: 무리 중심을 향해 부드럽게 이동, 끄면 구역 중심으로 이동
+    var tgx = follow ? c.x : 0, tgy = follow ? c.y : 0, tgz = follow ? c.z : 0;
+    cam.tx += (tgx - cam.tx) * 0.06; cam.ty += (tgy - cam.ty) * 0.06; cam.tz += (tgz - cam.tz) * 0.06;
+    var ce = Math.cos(cam.el);
+    T.camera.position.set(cam.tx + cam.dist * ce * Math.sin(cam.az), cam.ty + cam.dist * Math.sin(cam.el), cam.tz + cam.dist * ce * Math.cos(cam.az));
+    T.camera.lookAt(cam.tx, cam.ty, cam.tz);
+    T.scene.fog.near = cam.dist * 0.55;
+    T.scene.fog.far = cam.dist * 2.5;
+    T.renderer.render(T.scene, T.camera);
+  }
+
+  /* --- 2D/3D 전환 --- */
+  function setDim(d){
+    dim = d;
+    document.body.setAttribute('data-dim', String(d));
+    var sim = cur();
+    if(d === 3){ initThree(); showFailIfNeeded(); }
+    sim.setCount();
+    if(P().pred) sim.resetPred();
+    refreshControls();
+    updateVisibility();
+    updateWarn();
+    onResize();
+    if(T){ T.forceRecolor = true; T.s2.forceRecolor = true; }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=dim]'), function(r){
+    r.addEventListener('change', function(){ if(r.checked) setDim(parseInt(r.value, 10)); });
+  });
+  function onResize(){
+    if(T) resizeGL();
+    if(dim === 2 && !T) resize2();     // WebGL을 쓸 수 없을 때의 대체 화면(캔버스 2D)
+  }
+  window.addEventListener('resize', onResize);
+  if(typeof ResizeObserver !== 'undefined'){ new ResizeObserver(onResize).observe(stage); }
+
+  /* --- 버튼과 표시줄 --- */
+  var paused = false, frame = 0;
+  var pauseBtn = document.getElementById('pause');
+  pauseBtn.addEventListener('click', function(){
+    paused = !paused;
+    pauseBtn.textContent = paused ? '재생' : '일시정지';
+  });
+  document.getElementById('reset').addEventListener('click', function(){
+    cur().reset();
+    if(T){ T.forceRecolor = true; T.s2.forceRecolor = true; }
+  });
+  document.getElementById('kickL').addEventListener('click', function(){ cur().kick(-1); });
+  document.getElementById('kickR').addEventListener('click', function(){ cur().kick(1); });
+  var polEl = document.getElementById('pol'), nbrEl = document.getElementById('nbr'), hitsEl = document.getElementById('hits');
+  var fpsEl = document.getElementById('fps'), nWarn = document.getElementById('nWarn');
+  var dealignOuterEl = document.getElementById('dealignOuter'), dealignInnerEl = document.getElementById('dealignInner');
+  var dAvg = {o: null, i: null};
+  var lastT = performance.now(), fpsFrames = 0;
+  // 개체 수가 많을 때 느려질 수 있다는 안내
+  var lowFps = false, lastFps = 0;
+  function updateWarn(){
+    var p = P(), msg = '';
+    if(p.n > 4000){
+      msg = '새가 많아 컴퓨터에 따라 화면이 크게 느려질 수 있습니다.';
+      if(p.mode === 'radius' && p.radius > 20) msg += ' 보이드 방식은 특히 느리니 "가장 가까운 N마리" 방식이나 작은 인지 반경을 권합니다.';
+    }
+    if(lowFps){
+      msg += (msg ? ' ' : '') + '화면 속도가 낮습니다(약 ' + lastFps + ' fps).';
+      if(!view.perf) msg += ' "성능 우선"을 켜 보세요.';
+      msg += ' 개체 수를 줄이거나 "가장 가까운 N마리" 방식을 쓰면 더 빨라집니다.';
+    }
+    nWarn.textContent = msg;
+    nWarn.hidden = !msg;
+  }
+
+  function loop(){
+    var sim = cur();
+    if(!paused) sim.step();
+    sim.updateMarks();
+    if(frame % 20 === 0){ readTheme(); applyTheme3(); }
+    if(dim === 3) render3();
+    else if(T) render2gl();
+    else draw2();
+    fpsFrames++;
+    if(fpsFrames >= 30){
+      var nowT = performance.now();
+      lastFps = Math.round(fpsFrames * 1000 / (nowT - lastT));
+      fpsEl.textContent = lastFps;
+      lastT = nowT; fpsFrames = 0;
+      var low = lastFps < 20;
+      if(low || low !== lowFps){ lowFps = low; updateWarn(); }
+    }
+    if(view.dealign && frame % 10 === 0){
+      // 한 순간의 값은 흔들리므로 약 3초 이동평균으로 보인다
+      var dst = sim.dealignStats();
+      if(dst){
+        if(dAvg.o === null){ dAvg.o = dst.outer; dAvg.i = dst.inner; }
+        else { dAvg.o += (dst.outer - dAvg.o) * 0.05; dAvg.i += (dst.inner - dAvg.i) * 0.05; }
+        dealignOuterEl.textContent = dAvg.o.toFixed(2); dealignInnerEl.textContent = dAvg.i.toFixed(2);
+      }
+    }
+    if(frame % 6 === 0){
+      polEl.textContent = sim.pol.toFixed(2);
+      nbrEl.textContent = sim.avgNbr.toFixed(1);
+      hitsEl.textContent = sim.pred.hits;
+    }
+    frame++;
+    requestAnimationFrame(loop);
+  }
+
+  // 초기 상태 반영
+  updateWarn();
+  refreshControls();
+  updateVisibility();
+  setTab('basic');
+  initThree();                                   // 2D·3D 모두 WebGL로 그린다. 실패하면 2D는 캔버스로 그린다.
+  document.body.setAttribute('data-r2', T ? 'gl' : 'canvas');
+  if(T) resizeGL(); else resize2();
+  window.__boids = {view: view, sims: sims, DEF: DEF, setDim: setDim, getT: function(){ return T; }, getDim: function(){ return dim; }};
+  requestAnimationFrame(loop);
+})();
+
+</script>
+</body>
+</html>
