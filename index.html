@@ -172,13 +172,13 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
 }
 </style>
 </head>
-<body data-dim="2" data-tab="basic" data-r2="gl">
+<body data-dim="3" data-tab="basic" data-r2="gl">
 <div class="root">
   <header class="top">
     <h1>보이드 모델 시뮬레이션</h1>
     <div class="seg" role="radiogroup" aria-label="보기 방식">
-      <label><input type="radio" name="dim" value="2" checked><span>2D</span></label>
-      <label><input type="radio" name="dim" value="3"><span>3D</span></label>
+      <label><input type="radio" name="dim" value="2"><span>2D</span></label>
+      <label><input type="radio" name="dim" value="3" checked><span>3D</span></label>
     </div>
     <span class="grow"></span>
     <button id="togglePanel" type="button" aria-pressed="false">설정 숨기기</button>
@@ -428,7 +428,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     var W = 800, H = 500;
     var P = {
       wSep:1.5, wAli:1.0, wCoh:1.0,
-      n:500, speed:3.5, force:0.1,
+      n:4000, speed:3.5, force:0.1,
       k:7, radius:40, sepDist:18,
       mode:'knn', align:'inertial', chi:10, eta:0.4,
       pred:false, wFlee:5, predR:120, predSpeed:1.3,
@@ -910,7 +910,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     var MAX = 10000;
     var P = {
       wSep:1.5, wAli:1.0, wCoh:1.0,
-      n:500, speed:3.5, force:0.1,
+      n:4000, speed:3.5, force:0.1,
       k:7, radius:40, sepDist:15,
       mode:'knn', align:'inertial', chi:10, eta:0.4,
       pred:false, wFlee:3, predR:150, predSpeed:1.3,
@@ -1492,7 +1492,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
 /* ===== 화면과 조작 ===== */
 (function(){
   var sims = {2: createSim2D(), 3: createSim3D()};
-  var dim = 2;
+  var dim = 3;                        // 처음에는 3D 화면으로 시작한다
   function cur(){ return sims[dim]; }
   function P(){ return sims[dim].P; }
   var WORLD2 = {w: 960, h: 540};      // 2D 계산 공간(고정). 화면 크기에 맞춰 확대·축소해서 보여 준다.
@@ -2524,6 +2524,10 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
   updateVisibility();
   setTab('basic');
   initThree();                                   // 2D·3D 모두 WebGL로 그린다. 실패하면 2D는 캔버스로 그린다.
+  if(dim === 3 && !T){                           // 3D를 쓸 수 없으면(라이브러리·WebGL 실패) 2D 화면으로 시작한다
+    document.querySelector('input[name=dim][value="2"]').checked = true;
+    setDim(2);
+  }
   document.body.setAttribute('data-r2', T ? 'gl' : 'canvas');
   if(T) resizeGL(); else resize2();
   window.__boids = {view: view, sims: sims, DEF: DEF, setDim: setDim, getT: function(){ return T; }, getDim: function(){ return dim; }, rec: rec, rb: rb, rp: rp, replayView: replayView};
