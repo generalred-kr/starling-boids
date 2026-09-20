@@ -81,6 +81,13 @@ body[data-dim="2"] .only3d{display:none !important}
 .bar .spacer{flex:1}
 .kickgrp{display:inline-flex; align-items:center; gap:4px}
 .kickgrp .klbl{font-size:.8rem; color:var(--muted); margin-right:2px}
+.replay{position:absolute; left:8px; right:8px; bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 10px; background:var(--panel); border:1px solid var(--line); border-radius:8px; font-size:.85rem; z-index:3}
+.replay[hidden]{display:none}
+.replay input[type=range]{flex:1 1 120px; min-width:90px}
+.replay .rptime{white-space:nowrap; min-width:8.5em; text-align:right; font-variant-numeric:tabular-nums}
+.replay .rpspeed{display:inline-flex; align-items:center; gap:4px; margin:0}
+#rec.on{background:#d33; border-color:#d33; color:#fff}
+#recSave{margin-left:6px}
 .legend{display:inline-flex; align-items:center; flex-wrap:wrap; gap:2px 6px; color:var(--muted); font-size:.8rem}
 .sw{display:inline-block; width:9px; height:9px; border-radius:50%}
 .sw.focal{background:#e03e3e}
@@ -183,16 +190,25 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
         <canvas id="c2" aria-label="2차원 시뮬레이션 화면"></canvas>
         <div id="v3"></div>
         <div class="hud only3d">드래그: 회전 · 휠/두 손가락: 확대·축소</div>
+        <div class="replay" id="replayBar" hidden>
+          <button id="rpPlay" type="button" title="저장된 최근 10초를 재생하거나 멈춥니다">▶</button>
+          <input id="rpSlider" type="range" min="0" max="1000" value="1000" aria-label="다시 보기 위치">
+          <span id="rpTime" class="rptime">0.0 / 0.0초</span>
+          <label class="rpspeed">속도 <select id="rpSpeed"><option value="0.1">0.1배</option><option value="0.25" selected>0.25배</option><option value="0.5">0.5배</option><option value="1">1배</option></select></label>
+          <button id="rpExport" type="button" title="선택한 속도로 처음부터 재생하면서 영상 파일로 만듭니다">영상으로 만들기</button>
+          <button id="rpDl" type="button" hidden>영상 저장</button>
+        </div>
       </div>
       <div class="bar">
         <span>정렬도 <b id="pol">0.00</b></span>
         <span>이웃 <b id="nbr" title="새 한 마리가 이웃으로 보는 새의 평균 수">0</b></span>
-        <span title="포식자가 목표 새에게 접근한 횟수">접근 <b id="hits">0</b></span>
-        <span id="dealignBox" hidden title="최근 1초 동안 무리 평균 방향에서 벗어난 시간의 비율을 약 3초 이동평균한 값입니다. 바깥은 옆쪽 가장자리 10%의 새, 안쪽은 안쪽 50%의 새의 평균입니다.">이탈 바깥 <b id="dealignOuter">–</b> 안쪽 <b id="dealignInner">–</b></span>
+        <span title="포식자에게 잡힌 새의 수">잡힘 <b id="hits">0</b></span>
+        <span title="포식자에게 잡히지 않고 남은 새의 수">남음 <b id="alive">0</b></span>
         <span title="화면이 초당 몇 번 갱신되는지 보여 줍니다. 낮으면 개체 수를 줄이세요"><b id="fps">–</b> fps</span>
-        <span class="legend"><i class="sw focal"></i>선택 개체 <i class="sw near"></i>가까운 7마리 <i class="sw pred"></i>포식자 <i class="sw roost only3d"></i><span class="only3d">중심점</span></span>
+        <span class="legend"><i class="sw focal"></i>선택 개체 <i class="sw near"></i>가까운 7마리 <i class="sw pred"></i>포식자</span>
         <span class="spacer"></span>
         <span class="kickgrp" title="선택 개체 근처(100 이내)의 새들의 방향을 120도 돌립니다. 왼쪽·오른쪽은 새가 향한 방향 기준입니다(3D는 위에서 내려다본 기준)."><span class="klbl">방향 돌리기</span><button id="kickL" type="button">↶ 왼쪽</button><button id="kickR" type="button">오른쪽 ↷</button></span>
+        <button id="rec" type="button" title="시뮬레이션 화면을 영상으로 녹화합니다. 다시 누르면 정지합니다.">● 녹화</button>
         <button id="pause" type="button">일시정지</button>
         <button id="reset" type="button">초기화</button>
       </div>
@@ -211,8 +227,8 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           <fieldset>
             <legend>이웃 선택 방식</legend>
             <div class="radios col">
-              <label><input type="radio" name="mode" value="radius" checked> 보이드 방식 <span class="note">반경 안의 이웃 전부</span></label>
-              <label><input type="radio" name="mode" value="knn"> 가장 가까운 N마리 <span class="note">실측 방식</span> · N =
+              <label><input type="radio" name="mode" value="radius"> 보이드 방식 <span class="note">반경 안의 이웃 전부</span></label>
+              <label><input type="radio" name="mode" value="knn" checked> 가장 가까운 N마리 <span class="note">실측 방식</span> · N =
                 <input type="number" id="kInput" class="inline-num" min="1" max="20" step="1" value="7" aria-label="이웃 수 N"></label>
             </div>
           </fieldset>
@@ -228,11 +244,18 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
             <div class="radios">
               <label><input type="checkbox" id="predOn"> 포식자</label>
               <label title="화면 해상도를 1배로 낮추고 3D 그림자를 끕니다. 새가 많거나 컴퓨터가 느려 화면이 끊길 때 켜세요."><input type="checkbox" id="perfOn"> 성능 우선</label>
-              <label title="각 새가 최근 1초 동안 무리 평균 방향에서 벗어난 시간의 비율을 색으로 보입니다. 초록일수록 자주 벗어납니다(Attanasi 등 2015, 그림 6b)."><input type="checkbox" id="dealignOn"> 이탈도 색</label>
-              <label title="무리의 옆쪽 가장자리에서 시작한 방향 전환이 무리 전체로 퍼지게 합니다. 전환 중인 새는 노란색으로 보입니다."><input type="checkbox" id="spontOn"> 자발적 전환</label>
-              <label class="only3d"><input type="checkbox" id="roostOn"> 중심점 유인</label>
+              <label title="무리의 옆쪽 가장자리에서 시작한 방향 전환이 무리 전체로 퍼지게 합니다. 전환 중인 새는 노란색으로 보입니다."><input type="checkbox" id="spontOn" checked> 자발적 전환</label>
             </div>
           </div>
+          <div class="field">
+            <span class="fl">녹화</span>
+            <div class="radios">
+              <label title="켜면 녹화하는 동안 자발적 전환이 반드시 들어갑니다. 자발적 전환이 꺼져 있어도 녹화하는 동안은 켜고, 녹화를 시작하고 3초 뒤에 첫 전환이 시작됩니다. 끄면 지금 설정 그대로 녹화합니다."><input type="checkbox" id="recSpont" checked> 자발적 전환 포함</label>
+              <label>자동 정지 <select id="recLen"><option value="0">없음</option><option value="15">15초</option><option value="30">30초</option><option value="60">60초</option></select></label>
+              <button id="recSave" type="button" hidden>녹화 저장</button>
+            </div>
+          </div>
+          <p class="tip" id="recNote" hidden style="margin:-3px 0 7px"></p>
           <div class="rows one" id="selRows" style="margin-bottom:7px"></div>
           <p class="tip" id="nWarn" hidden style="margin:-3px 0 7px"></p>
           <div class="field only3d">
@@ -241,7 +264,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
               <label><input type="checkbox" id="follow" checked> 무리 따라가기</label>
               <label><input type="checkbox" id="autoRot"> 자동 회전</label>
               <label title="새의 그림자를 바닥에 그려 높이를 보기 쉽게 합니다"><input type="checkbox" id="shadowOn" checked> 그림자</label>
-              <label title="초기화할 때 적용됩니다"><input type="checkbox" id="alignedStart" checked> 정렬된 시작</label>
             </div>
           </div>
 
@@ -276,8 +298,8 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     <details><summary>이웃을 정하는 두 가지 방식</summary><div>
       <p>새가 "이웃"으로 보는 대상을 정하는 방식이 두 가지 있습니다.</p>
       <ul>
-        <li><b>보이드 방식 (기본)</b>: 정해진 거리(인지 반경) 안에 있는 새를 모두 이웃으로 봅니다. 새가 빽빽한 곳에서는 이웃이 수십~수백 마리가 될 수 있고, 이웃이 많을수록 계산이 오래 걸립니다.</li>
-        <li><b>가장 가까운 N마리</b>: 거리와 관계없이 가장 가까운 N마리(기본 7)만 이웃으로 봅니다. 찌르레기 무리를 관찰한 연구(Ballerini 등, 2008)에서 새 한 마리가 거리와 관계없이 가장 가까운 6~7마리와 상호작용한다고 보고되어 이 방식을 넣었습니다. 새가 빽빽하든 드물든 이웃 수가 일정합니다.</li>
+        <li><b>보이드 방식</b>: 정해진 거리(인지 반경) 안에 있는 새를 모두 이웃으로 봅니다. 새가 빽빽한 곳에서는 이웃이 수십~수백 마리가 될 수 있고, 이웃이 많을수록 계산이 오래 걸립니다.</li>
+        <li><b>가장 가까운 N마리 (기본)</b>: 거리와 관계없이 가장 가까운 N마리(기본 7)만 이웃으로 봅니다. 찌르레기 무리를 관찰한 연구(Ballerini 등, 2008)에서 새 한 마리가 거리와 관계없이 가장 가까운 6~7마리와 상호작용한다고 보고되어 이 방식을 넣었습니다. 새가 빽빽하든 드물든 이웃 수가 일정합니다.</li>
       </ul>
       <p>화면 아래쪽의 "이웃" 값으로 실제 이웃이 몇 마리인지 볼 수 있습니다. N을 너무 작게(예: 1) 하면 정렬이 잘 되지 않는 경우가 있습니다.</p>
     </div></details>
@@ -294,14 +316,13 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       <p>"포식자"를 켜면 주황색 포식자가 나타납니다.</p>
       <ul>
         <li>포식자는 가장 가까운 새를 골라, 그 새가 앞으로 있을 위치를 향해 쫓아갑니다. 속도는 새의 최대 속도의 1.3배(기본)이지만 한 번에 꺾을 수 있는 각도가 제한되어 있어서 급하게 방향을 바꾸지는 못합니다.</li>
-        <li>목표 새에게 10 이내로 다가가면 "접근" 횟수가 1 늘고, 포식자는 무리에서 잠시 물러났다가 다시 쫓습니다. 새를 잡아서 없애지는 않습니다.</li>
+        <li>포식자는 잡을 때까지 쫓아가고 물러서지 않습니다. 목표 새에게 10 이내로 다가가면 그 새를 잡은 것으로 보고 무리에서 뺍니다. 그러면 바로 다음으로 가까운 새를 쫓습니다. 30초 동안 잡지 못하면 가장 가까운 새로 목표를 바꿉니다.</li>
+        <li>화면 아래의 "잡힘"은 잡힌 새의 수, "남음"은 남은 새의 수입니다. 새가 20마리 남으면 더 잡지 않습니다. 초기화를 누르면 새가 다시 채워집니다.</li>
         <li>포식자 감지 거리 안으로 들어온 새는 포식자에게서 멀어지려 합니다. 가까울수록 더 세게 도망치고, 이때는 최대 속도의 1.3배까지 낼 수 있습니다.</li>
-        <li>포식자를 본 새가 이웃에게 따로 알리지는 않습니다. 도망치는 반응은 정렬·응집 규칙을 통해서만 주변 새에게 퍼집니다.</li>
+        <li>감지 거리 안의 새는 세 규칙의 가중치도 바뀝니다. 기본값은 분리 ×1.5, 정렬 ×1.5, 응집 ×0.5입니다. 서로 더 떨어지고 방향은 더 잘 맞추면서 뭉치는 힘은 줄어서, 쫓길 때 무리가 퍼지면서 함께 도망치는 모습이 됩니다. Expert에서 배율을 바꿀 수 있습니다.</li>
+        <li>이 배율은 제가 정한 값입니다. 실제 무리가 공격받을 때는 퍼지는 경우와 뭉치는 경우가 모두 관찰됩니다(Storms 등, 2019). 이 시뮬레이션에서 분리 ×0.6, 정렬 ×1.5, 응집 ×2처럼 뭉치게 하면 포식자가 훨씬 많이 잡았습니다(500마리, 240초 기준 분당 2D 6.6마리 → 11.8마리, 3D 7.3마리 → 21.0마리). 기본 배율(퍼짐)은 배율을 쓰지 않을 때와 잡히는 수가 거의 같았습니다(2D 6.3마리, 3D 7.6마리). 이 포식자는 감지 거리 안의 가장 가까운 새를 잡을 뿐이어서, 뭉친 무리가 포식자를 혼란시키는 효과는 들어 있지 않습니다.</li>
+        <li>포식자를 본 새가 이웃에게 따로 알리지는 않습니다. 도망치는 반응은 정렬·응집 규칙을 통해서만 주변 새에게 퍼집니다. 다만 감지 거리 안의 새에게만 위 배율이 적용됩니다.</li>
       </ul>
-    </div></details>
-
-    <details class="only3d"><summary>중심점 유인 (3D 전용)</summary><div>
-      <p>3D 화면에서 "중심점 유인"을 켜면 구역 중심에 초록색 표시가 나타납니다. 중심점에서 <b>유인 시작 거리</b>보다 멀리 있는 새는 중심점 쪽으로 향하는 힘을 받고, 멀어질수록 힘이 세집니다. 그 결과 무리가 중심점 주변을 오가며 방향을 바꾸게 됩니다. 새들이 잠자리 위를 맴도는 모습을 단순하게 흉내 낸 것입니다.</p>
     </div></details>
 
     <details><summary>화면 표시를 읽는 법</summary><div>
@@ -310,11 +331,10 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
         <li><b>연한 빨간 삼각형</b>: 선택 개체와 가장 가까운 7마리입니다. 이웃 방식과 관계없이 항상 7마리를 표시합니다. "가장 가까운 N마리" 방식에서 N이 7이면 실제로 영향을 주는 이웃과 같습니다.</li>
         <li><b>정렬도(0~1)</b>: 모든 새의 진행 방향을 평균낸 값입니다. 1에 가까우면 거의 모두 같은 방향으로 움직이고, 0에 가까우면 방향이 제각각입니다.</li>
         <li><b>이웃</b>: 새 한 마리가 이웃으로 보는 새의 평균 수입니다.</li>
-        <li><b>접근</b>: 포식자가 목표 새에게 접근한 횟수입니다. 초기화하면 0으로 돌아갑니다.</li>
+        <li><b>잡힘 / 남음</b>: 포식자에게 잡힌 새의 수와 남은 새의 수입니다. 초기화하면 처음 상태로 돌아갑니다.</li>
         <li><b>fps</b>: 화면이 초당 몇 번 갱신되는지입니다. 낮을수록 화면이 끊깁니다. 새를 많이 늘렸을 때 참고하세요.</li>
         <li><b>방향 돌리기 (↶ 왼쪽 / 오른쪽 ↷)</b>: 선택 개체 근처의 새들의 방향을 강제로 120도 돌립니다. 방향 변화가 무리로 퍼지는 모습을 볼 때 씁니다. 왼쪽·오른쪽은 새가 향한 방향을 기준으로 하며, 3D에서는 위에서 내려다본 기준입니다. 방향 변화는 돌린 쪽으로 퍼지므로 두 버튼을 번갈아 눌러 비교해 보세요.</li>
         <li><b>노란 삼각형</b>: 자발적 전환 중인 새입니다(옵션을 켰을 때). 전환이 시작된 가장자리에서 무리 안으로 퍼지는 모습을 볼 수 있습니다.</li>
-        <li><b>이탈도 색</b> (옵션): 각 새가 최근 1초 동안 무리 평균 방향에서 벗어난 시간의 비율을 색으로 보입니다. 초록일수록 자주 벗어납니다. 아래 표시줄의 "이탈 바깥/안쪽"은 옆쪽 가장자리 10%의 새와 안쪽 50%의 새의 평균값(약 3초 이동평균)입니다. 켠 직후 몇 초는 0.5 근처에서 시작하므로 잠시 기다려야 합니다. Attanasi 등(2015)이 실제 찌르레기 무리에서 측정한 이탈 시간과 같은 방식의 값입니다.</li>
         <li><b>화면 가장자리</b>: 새가 밖으로 나가지 않도록, 2D는 화면 가장자리에서, 3D는 타원체 모양의 구역 가장자리에서 안쪽으로 방향을 틉니다.</li>
       </ul>
     </div></details>
@@ -329,29 +349,28 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
         <li><b>분리 가중치를 바꿔</b> 보세요. 낮추면 새들이 겹치고, 높이면 새 사이 간격이 넓어집니다.</li>
         <li><b>응집 가중치를 0으로</b> 내려 보세요. 무리 크기와 정렬도가 어떻게 변하는지 봅니다. 결과는 2D와 3D, 이웃 방식에 따라 다르게 나타납니다.</li>
         <li><b>이웃 방식을 "가장 가까운 N마리"로</b> 바꾸고 N을 1, 7, 20으로 바꿔 보세요.</li>
-        <li><b>포식자를 켜고 회피 세기를 0과 5로</b> 비교해 보세요. 2D에서는 회피 세기가 클수록 접근 횟수가 줄어듭니다. 3D에서는 접근 횟수보다, 포식자가 있을 때 무리가 흩어지고 정렬도가 낮아지는 변화가 더 뚜렷합니다.</li>
+        <li><b>포식자를 켜고 쫓길 때의 분리·정렬·응집 배율을 바꿔</b> 보세요. 응집 배율을 키우고 분리 배율을 줄이면 무리가 뭉치고, 반대로 하면 퍼집니다. "잡힘" 수가 어떻게 달라지는지 봅니다.</li>
         <li><b>"방향 돌리기"의 왼쪽·오른쪽을 관성 모델과 기본 방식에서 각각</b> 눌러 보세요. 주변 새들의 반응이 나타나는 속도와 방식을 비교해 봅니다.</li>
-        <li class="only3d"><b>(3D) 중심점 유인을 켜고</b> 유인 거리를 바꿔 보세요.</li>
       </ol>
     </div></details>
 
     <details><summary>수식으로 보기 (선택)</summary><div>
       <p class="small">수식이 필요 없는 분은 건너뛰셔도 됩니다.</p>
-      <p>새 한 마리의 속도 변화 = <code>w_sep × 분리 + w_ali × 정렬 + w_coh × 응집</code> (여기에 포식자 회피, 경계·중심점 힘이 더해집니다). 세 힘은 모두 "원하는 속도 − 현재 속도"를 최대 힘(0.1) 이하로 자른 값입니다. 분리는 분리 거리 안의 이웃에서 멀어지는 방향, 정렬은 이웃 평균 속도 방향, 응집은 이웃 평균 위치 방향을 원하는 방향으로 삼습니다.</p>
+      <p>새 한 마리의 속도 변화 = <code>w_sep × 분리 + w_ali × 정렬 + w_coh × 응집</code> (여기에 포식자 회피와 경계 힘이 더해집니다). 세 힘은 모두 "원하는 속도 − 현재 속도"를 최대 힘(0.1) 이하로 자른 값입니다. 분리는 분리 거리 안의 이웃에서 멀어지는 방향, 정렬은 이웃 평균 속도 방향, 응집은 이웃 평균 위치 방향을 원하는 방향으로 삼습니다.</p>
       <p>관성 모델에서는 정렬 항 대신 회전 토크를 씁니다. 토크 τ는 자기 방향과 이웃 방향의 차이(2D에서는 sin값의 평균, 3D에서는 외적의 평균)이고, 회전 상태 s는 <code>s ← s + J·τ − (η/χ)·s</code>로 갱신됩니다(J = 0.06 × w_ali). 각속도는 ω = s/χ이며 프레임당 0.35 rad을 넘지 않게 제한하고, 속도 방향을 ω만큼 회전시킵니다. 이 방식은 정렬 항이 속도를 최대 속도 쪽으로 밀어주지 않으므로, 속도를 최대 속도 쪽으로 서서히 되돌리는 보정을 함께 씁니다.</p>
       <p>정렬도 = 새들의 진행 방향(단위벡터)을 모두 더한 벡터의 크기 ÷ 새의 수.</p>
     </div></details>
 
     <details><summary>실제 무리와 비교한 결과 (Cavagna 그룹 논문)</summary><div>
       <ul>
-        <li><b>가장자리 새가 더 자주 벗어남</b>: 실제 무리에서는 옆쪽 가장자리의 새일수록 무리 평균 방향에서 자주 벗어납니다(Attanasi 등, 2015). 이 시뮬레이션에서도 정렬도가 0.85 이상인 때의 측정값이 2D·3D 모두 바깥 10%는 약 0.65~0.81, 안쪽 50%는 약 0.40~0.44로 나왔습니다(500마리, 이웃·정렬 방식 5가지 조합). "이탈도 색"을 켜면 볼 수 있습니다. 이 결과를 위한 규칙을 따로 넣지 않았는데도 나타났습니다.</li>
-        <li><b>무리 모양</b>: 실제 무리는 곧게 날 때 가장 긴 축이 이동 방향과 수직에 가깝습니다. 실제 무리는 곧게 날 때 이동 방향과 가장 긴 축의 |cos|가 대개 0.5 미만입니다. 이 시뮬레이션에서 정렬도가 0.8 이상인 구간(3D, 500마리)을 잰 값은 "가장 가까운 N마리 + 관성 모델"에서 N=7일 때 0.44, N=12일 때 0.20이었고, 보이드 방식은 0.52, 기본 정렬은 0.57이었습니다. 표본이 30여 개 구간이라 대략적인 값입니다.</li>
+        <li><b>가장자리 새가 더 자주 벗어남</b>: 실제 무리에서는 옆쪽 가장자리의 새일수록 무리 평균 방향에서 자주 벗어납니다(Attanasi 등, 2015). 이 시뮬레이션에서도 정렬도가 0.85 이상인 때의 측정값이 2D·3D 모두 바깥 10%는 약 0.65~0.81, 안쪽 50%는 약 0.40~0.44로 나왔습니다(500마리, 이웃·정렬 방식 5가지 조합). 이 결과를 위한 규칙을 따로 넣지 않았는데도 나타났습니다.</li>
+        <li><b>무리 모양</b>: 실제 무리는 곧게 날 때 가장 긴 축이 이동 방향과 수직에 가깝습니다. 이동 방향과 가장 긴 축의 |cos|가 대개 0.5 미만입니다. 이 시뮬레이션에서 정렬도가 0.8 이상인 구간(3D, 500마리)을 잰 값은 "가장 가까운 N마리 + 관성 모델"에서 N=7일 때 0.44, N=12일 때 0.20이었고, 보이드 방식은 0.52, 기본 정렬은 0.57이었습니다. 표본이 30여 개 구간이라 대략적인 값입니다.</li>
         <li><b>속도 변화</b>: 실제 무리의 개체 속도 변화는 평균 속도 대비 분산 약 0.005입니다(Bialek 등, 2014). 이 시뮬레이션의 기본값은 약 0.002로 같은 자릿수입니다.</li>
         <li><b>이웃 상호작용만으로는 재현되지 않은 것</b>: 가장자리의 소수가 시작한 방향 전환이 무리 전체로 퍼지는 과정입니다. 소수의 새만 돌리면 무리 평균 방향은 그 새들의 비율만큼만 바뀝니다(500마리 중 10마리를 60도 돌리면 약 1도). 그래서 "자발적 전환" 옵션은 전환 신호가 퍼지는 속도와 새들의 회전 속도를 미리 정해 두는 방식으로 넣었습니다.</li>
       </ul>
     </div></details>
 
-    <details><summary>자발적 전환 (옵션, 실험)</summary><div>
+    <details><summary>자발적 전환 (기본으로 켜져 있음, 실험)</summary><div>
       <p>실제 찌르레기 무리는 포식자가 없어도 방향을 자주 바꿉니다. 이 옵션은 그 변화를 단순하게 흉내 냅니다. 논문의 공식이 아니라 관찰을 옮긴 규칙입니다.</p>
       <ol>
         <li>무작위 시각에, 무리 진행 방향의 옆쪽 가장자리에 있는 서로 가까운 새 10마리 안팎이 안쪽으로 돌기 시작합니다(Attanasi 등, 2015).</li>
@@ -359,12 +378,35 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
         <li>모든 새가 같은 회전 속도로 정해진 각도만큼만 돌기 때문에 새마다 같은 반지름의 경로를 따라갑니다. 실제 무리도 같은 반지름의 경로로 돕니다.</li>
       </ol>
       <p>전환이 시작되는 시각과 각각의 새가 돌기 시작하는 시각은 미리 정해 둔 것이며, 새들 사이의 상호작용에서 나온 결과가 아닙니다. 전환 중에도 분리·정렬·응집 규칙은 그대로 작용합니다.</p>
-      <p>Expert에서 평균 간격과 각도를 바꿀 수 있습니다. 3D 500마리 시험(보이드 방식)에서 평균 간격 6초, 각도 90도로 하면 무리 중심이 같은 경로를 왕복하는 규칙성이 줄었습니다. 반복 정도가 0.99에서 0.52로 낮아졌고, 정렬도가 0.6 미만인 시간은 18%에서 5%로 줄었습니다.</p>
+      <p>끄려면 옵션 줄의 "자발적 전환"을 해제하세요. Expert에서 평균 간격과 각도를 바꿀 수 있습니다. 3D 500마리 시험(보이드 방식)에서 평균 간격 6초, 각도 90도로 하면 무리 중심이 같은 경로를 왕복하는 규칙성이 줄었습니다. 반복 정도가 0.99에서 0.52로 낮아졌고, 정렬도가 0.6 미만인 시간은 18%에서 5%로 줄었습니다.</p>
+    </div></details>
+
+    <details><summary>녹화</summary><div>
+      <ul>
+        <li>표시줄의 <b>● 녹화</b>를 누르면 시뮬레이션 화면(캔버스)을 녹화하고, 다시 누르면 정지합니다. 옆의 패널이나 표시줄은 영상에 들어가지 않습니다. 정지하면 "녹화 저장" 버튼이 나타납니다.</li>
+        <li><b>자발적 전환 포함</b>(기본으로 켜짐): 녹화하는 동안 자발적 전환이 반드시 일어나게 합니다. 자발적 전환이 꺼져 있어도 녹화하는 동안은 켜고, 녹화를 시작하고 3초 뒤에 첫 전환을 시작합니다. 녹화가 끝나면 원래 설정으로 돌아갑니다. 끄면 지금 설정 그대로 녹화합니다.</li>
+        <li><b>자동 정지</b>: 정한 시간이 지나면 저절로 정지합니다.</li>
+        <li>파일 형식은 브라우저가 지원하는 것으로 정해집니다(mp4 또는 webm). 녹화 중에 창 크기를 바꾸면 영상 크기가 바뀔 수 있습니다.</li>
+        <li>"화면 녹화용"으로 쓰던 <b>설정 숨기기</b>와 함께 쓰면 화면만 크게 녹화할 수 있습니다.</li>
+      </ul>
+    </div></details>
+
+    <details><summary>일시정지와 다시 보기</summary><div>
+      <ul>
+        <li>새가 움직이는 동안 프로그램은 <b>최근 10초</b>(초당 30프레임)를 계속 저장해 둡니다.</li>
+        <li><b>일시정지</b>를 누르면 화면 아래에 다시 보기 표시줄이 나타납니다. 일시정지한 뒤의 화면은 계산하지 않으므로, 저장된 것은 멈추기 직전 10초입니다.</li>
+        <li>▶를 누르면 저장된 10초를 처음부터 재생하고, 슬라이더로 원하는 시점으로 옮길 수 있습니다. 속도는 0.1배·0.25배(기본)·0.5배·1배 중에서 고릅니다. 저장된 프레임 사이를 보간해서 느리게 봐도 부드럽게 보입니다.</li>
+        <li>3D에서는 다시 보는 중에도 드래그로 회전하고 확대·축소할 수 있습니다. 아래 표시줄의 정렬도·잡힘·남음도 그 시점의 값으로 바뀝니다.</li>
+        <li>슬라이더의 맨 끝이 일시정지한 순간입니다. "재생"(일시정지 버튼)을 누르면 그 순간부터 이어서 계산합니다. 다시 본 위치에서 이어지지는 않습니다.</li>
+        <li><b>영상으로 만들기</b>: 선택한 속도로 처음부터 한 번 재생하면서 녹화하고, 끝나면 "영상 저장"이 나타납니다. 0.25배로 만들면 10초 구간이 40초짜리 영상이 됩니다.</li>
+        <li>저장은 2D와 3D에 따로 됩니다. 초기화하거나 개체 수를 바꾸면 지워집니다. 저장에는 메모리를 씁니다(3D 기준 500마리 약 4MB, 2000마리 약 15MB, 10000마리 약 75MB. 2D는 그보다 적습니다).</li>
+      </ul>
     </div></details>
 
     <details><summary>알아둘 점과 한계</summary><div>
       <ul>
         <li>실제 새의 비행 역학(회전할 때 몸이 기울어지는 것, 속도 변화), 시야 제한, 바람은 넣지 않았습니다.</li>
+        <li>3D에서는 무리가 처음에 대체로 같은 방향으로 나는 상태로 시작합니다. 방향이 제각각인 상태에서 시작하면 무리가 질서를 찾는 데 오래 걸리는 경우가 많았습니다(3D 500마리, 무작위 시작 3번 중 2번은 40초 뒤에도 정렬도가 0.5 아래).</li>
         <li>기본값은 무리가 안정적으로 보이도록 정한 값이며, 실제 찌르레기 측정값과 맞춰서 검증한 것이 아닙니다.</li>
         <li>새는 최대 10000마리까지 늘릴 수 있지만, 많을수록 계산이 오래 걸려 화면이 느려집니다. 특히 "보이드 방식"에서 반경이 크고 새가 많으면 이웃이 수백 마리가 되어 크게 느려집니다. 새를 많이 늘릴 때는 "가장 가까운 N마리" 방식이나 작은 반경을 권합니다. 화면 아래의 fps 값이 낮아지면(대략 20 이하) 개체 수를 줄이세요.</li>
         <li>2D는 가로 960 × 세로 540 크기의 고정된 공간에서 계산하고 화면 크기에 맞춰 확대·축소해 보여 줍니다. 3D는 타원체(반지름 520 × 260 × 420) 구역 안에서 움직이며, 2D와 3D는 각각 따로 계산합니다.</li>
@@ -388,9 +430,10 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       wSep:1.5, wAli:1.0, wCoh:1.0,
       n:500, speed:3.5, force:0.1,
       k:7, radius:40, sepDist:18,
-      mode:'radius', align:'inertial', chi:10, eta:0.4,
+      mode:'knn', align:'inertial', chi:10, eta:0.4,
       pred:false, wFlee:5, predR:120, predSpeed:1.3,
-      spont:false, spontEvery:6, spontN:10, spontAngle:90
+      spont:true, spontEvery:6, spontN:10, spontAngle:90,
+      alSep:1.5, alAli:1.5, alCoh:0.5
     };
     var x = new Float32Array(MAX), y = new Float32Array(MAX);
     var vx = new Float32Array(MAX), vy = new Float32Array(MAX);
@@ -405,7 +448,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     var avgNbr = 0, pol = 0;
 
     /* ---- 포식자 ---- */
-    var PRED_TURN = 0.05, PRED_CATCH = 10, PRED_REST = 90, PRED_TIMEOUT = 240;
+    var PRED_TURN = 0.05, PRED_CATCH = 10, PRED_RETARGET = 1800, MIN_ALIVE = 20;   // 30초 동안 못 잡으면 가장 가까운 새로 목표를 바꾼다, 새가 20마리 남으면 더 잡지 않는다
     var pred = {x:0, y:0, vx:0, vy:0, state:'hunt', t:0, target:-1, hits:0};
 
     function resetPred(){
@@ -414,35 +457,41 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       pred.state = 'hunt'; pred.t = 0; pred.target = -1; pred.hits = 0;
     }
 
+    // 포식자에게 잡힌 새를 무리에서 뺀다(마지막 새를 그 자리로 옮긴다)
+    function removeBird(i){
+      var last = count - 1;
+      if(i !== last){
+        x[i] = x[last]; y[i] = y[last];
+        vx[i] = vx[last]; vy[i] = vy[last];
+        spin[i] = spin[last];
+        tCnt[i] = tCnt[last]; tWait[i] = tWait[last]; tDir[i] = tDir[last];
+      }
+      count = last;
+    }
+
     function updatePredator(n){
       if(!P.pred || n < 1) return;
       var ps = P.speed * P.predSpeed;
       var desx = null, desy = 0;
       pred.t++;
-      if(pred.state === 'hunt'){
-        if(pred.target < 0 || pred.target >= n){
-          var bd = 1e18, bi = 0;
-          for(var i = 0; i < n; i++){
-            var ddx = x[i] - pred.x, ddy = y[i] - pred.y, dd = ddx * ddx + ddy * ddy;
-            if(dd < bd){ bd = dd; bi = i; }
-          }
-          pred.target = bi; pred.t = 0;
+      // 잡을 때까지 쫓아가고 물러서지 않는다. 잡으면 그 새는 무리에서 빠지고, 바로 다음으로 가까운 새를 쫓는다.
+      if(pred.target < 0 || pred.target >= n || pred.t > PRED_RETARGET){
+        var bd = 1e18, bi = 0;
+        for(var i = 0; i < n; i++){
+          var ddx = x[i] - pred.x, ddy = y[i] - pred.y, dd = ddx * ddx + ddy * ddy;
+          if(dd < bd){ bd = dd; bi = i; }
         }
-        var tg = pred.target;
-        var dx = x[tg] - pred.x, dy = y[tg] - pred.y;
-        var d = Math.sqrt(dx * dx + dy * dy);
-        if(d < PRED_CATCH){ pred.hits++; pred.state = 'rest'; pred.t = 0; pred.target = -1; }
-        else if(pred.t > PRED_TIMEOUT){ pred.state = 'rest'; pred.t = 0; pred.target = -1; }
-        else {
-          var lead = Math.min(30, d / ps);
-          desx = x[tg] + vx[tg] * lead - pred.x;
-          desy = y[tg] + vy[tg] * lead - pred.y;
-        }
+        pred.target = bi; pred.t = 0;
+      }
+      var tg = pred.target;
+      var dx = x[tg] - pred.x, dy = y[tg] - pred.y;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if(d < PRED_CATCH && n > MIN_ALIVE){
+        removeBird(tg); pred.hits++; pred.target = -1; pred.t = 0;
       } else {
-        if(pred.t > PRED_REST){ pred.state = 'hunt'; pred.t = 0; pred.target = -1; }
-        var mx = 0, my = 0;
-        for(var q = 0; q < n; q++){ mx += x[q]; my += y[q]; }
-        desx = pred.x - mx / n; desy = pred.y - my / n;
+        var lead = Math.min(30, d / ps);
+        desx = x[tg] + vx[tg] * lead - pred.x;
+        desy = y[tg] + vy[tg] * lead - pred.y;
       }
       if(desx === null){ desx = pred.vx; desy = pred.vy; }
       // 벽 쪽으로 향하며 선회 반경 이내로 가까워지면 화면 중앙 쪽으로 향한다
@@ -601,7 +650,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       }
       mx /= n; my /= n;
       var sl = Math.sqrt(hx * hx + hy * hy);
-      if(sl / n < 0.3) return;                            // 방향이 제각각이면 시작하지 않는다
+      if(sl / n < 0.3){ spontNext = spontTick + 60; return; }   // 방향이 제각각이면 시작하지 않고 1초 뒤에 다시 시도한다
       hx /= sl; hy /= sl;                                 // 무리의 평균 진행 방향
       // 옆쪽 위치 s: 화면에서 진행 방향의 오른쪽이 +, 왼쪽이 −
       for(i = 0; i < n; i++) sVal[i] = (x[i] - mx) * (-hy) + (y[i] - my) * hx;
@@ -639,6 +688,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       spontTrigger(n);
       var actNext = 0;
       updatePredator(n);
+      n = count;                 // 잡힌 새가 빠졌을 수 있다
       var R2 = P.radius * P.radius;
       var sd2 = P.sepDist * P.sepDist;
       var maxS = P.speed, minS = P.speed * 0.5, maxF = P.force;
@@ -658,6 +708,12 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           if(tWait[i] === 0) tCnt[i] = TURN_DUR;
         }
 
+        // 포식자가 감지 거리 안에 있으면 분리·정렬·응집 가중치에 경계 배율을 곱한다(쫓기는 새의 행동)
+        var kS = 1, kA = 1, kC = 1;
+        if(P.pred){
+          var adx = xi - pred.x, ady = yi - pred.y;
+          if(adx * adx + ady * ady < P.predR * P.predR){ kS = P.alSep; kA = P.alAli; kC = P.alCoh; }
+        }
         var fx = 0, fy = 0, tq = 0;
         if(cnt > 0){
           var sx = 0, sy = 0, sc = 0, ax = 0, ay = 0, cx = 0, cy = 0;
@@ -671,7 +727,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           }
           if(sc > 0){
             steer(sx, sy, vx[i], vy[i], maxS, maxF);
-            fx += P.wSep * st[0]; fy += P.wSep * st[1];
+            fx += P.wSep * kS * st[0]; fy += P.wSep * kS * st[1];
           }
           if(inertial){
             // 이웃 방향과의 차이 sin(φj − φi)의 평균 = 회전 토크
@@ -685,10 +741,10 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
             tq = msum / cnt;
           } else {
             steer(ax / cnt, ay / cnt, vx[i], vy[i], maxS, maxF);
-            fx += P.wAli * st[0]; fy += P.wAli * st[1];
+            fx += P.wAli * kA * st[0]; fy += P.wAli * kA * st[1];
           }
           steer(cx / cnt, cy / cnt, vx[i], vy[i], maxS, maxF);
-          fx += P.wCoh * st[0]; fy += P.wCoh * st[1];
+          fx += P.wCoh * kC * st[0]; fy += P.wCoh * kC * st[1];
         }
 
         // 포식자 회피
@@ -725,7 +781,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           var tgt = sp2 + 0.2 * (capS - sp2);
           tx *= tgt / sp2; ty *= tgt / sp2;
           // χ·dω/dt = J·tq − η·ω  (s = χω), 각속도 상한 0.35 rad/프레임
-          spin[i] += P.wAli * 0.06 * tq - (P.eta / P.chi) * spin[i];
+          spin[i] += P.wAli * kA * 0.06 * tq - (P.eta / P.chi) * spin[i];
           var om = spin[i] / P.chi;
           if(om > 0.35){ om = 0.35; spin[i] = om * P.chi; }
           else if(om < -0.35){ om = -0.35; spin[i] = om * P.chi; }
@@ -762,49 +818,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     }
 
 
-    /* ---- 이탈도(dealignment): 각 새가 최근 약 1초 동안 무리 평균 방향에서 벗어난 시간의 비율 ----
-       Attanasi 등(2015)의 δ_i: C_i = (개체 방향)·(무리 평균 방향)이 중앙값보다 낮은 시간의 비율. 1초(60프레임) 지수 평균으로 계산한다. */
-    var dealign = new Float32Array(MAX), dCos = new Float32Array(MAX), trackDealign = false;
-    function meanHeading(){
-      var su = 0, sv = 0;
-      for(var i = 0; i < count; i++){
-        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]) || 1;
-        su += vx[i] / l; sv += vy[i] / l;
-      }
-      var L = Math.sqrt(su * su + sv * sv) || 1;
-      return [su / L, sv / L];
-    }
-    function updateDealign(){
-      var n = count;
-      if(n < 10) return;
-      var H = meanHeading(), i;
-      for(i = 0; i < n; i++){
-        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]) || 1;
-        dCos[i] = (vx[i] * H[0] + vy[i] * H[1]) / l;
-      }
-      var stride = Math.max(1, Math.floor(n / 256)), smp = [];
-      for(i = 0; i < n; i += stride) smp.push(dCos[i]);
-      smp.sort(function(a, b){ return a - b; });
-      var c0 = smp[Math.floor(smp.length / 2)];
-      for(i = 0; i < n; i++) dealign[i] += ((dCos[i] < c0 ? 1 : 0) - dealign[i]) / 60;
-    }
-    // 옆쪽 가장자리(진행 방향에 수직인 방향으로 가장 바깥 10%)와 안쪽 50%의 평균 이탈도
-    function dealignStats(){
-      var n = count;
-      if(n < 20) return null;
-      var H = meanHeading(), nx = -H[1], ny = H[0];
-      var mx = 0, my = 0, i;
-      for(i = 0; i < n; i++){ mx += x[i]; my += y[i]; }
-      mx /= n; my /= n;
-      var ord = [];
-      for(i = 0; i < n; i++) ord.push([Math.abs((x[i] - mx) * nx + (y[i] - my) * ny), dealign[i]]);
-      ord.sort(function(a, b){ return b[0] - a[0]; });
-      var k10 = Math.max(1, Math.floor(n * 0.1)), h = Math.floor(n * 0.5), o = 0, inn = 0;
-      for(i = 0; i < k10; i++) o += ord[i][1];
-      for(i = h; i < n; i++) inn += ord[i][1];
-      return {outer: o / k10, inner: inn / (n - h)};
-    }
-
     /* ---- 초기화, 개체 수, 표시용 ---- */
     function spawn(i){
       x[i] = Math.random() * W;
@@ -814,7 +827,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       vx[i] = Math.cos(a) * s;
       vy[i] = Math.sin(a) * s;
       spin[i] = 0;
-      dealign[i] = 0.5;
       tCnt[i] = 0; tWait[i] = 0;
     }
     function syncCount(){
@@ -826,7 +838,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
 
     // 선택 개체(0번)에서 가장 가까운 7마리는 mark=1, 선택 개체는 mark=2
     function updateMarks(){
-      if(trackDealign) updateDealign();
       mark.fill(0, 0, count);
       if(turnActive > 0) for(var q = 0; q < count; q++) if(tCnt[q] > 0) mark[q] = 3;   // 전환 중인 새
       if(count < 1) return;
@@ -871,9 +882,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       get spontLast(){ return spontLast; },
       get turnActive(){ return turnActive; },
       forceSpont: function(){ spontNext = spontTick; },
-      dealign: dealign,
-      dealignStats: dealignStats,
-      setTrackDealign: function(v){ trackDealign = !!v; for(var i = 0; i < count; i++) dealign[i] = 0.5; },
+      scheduleSpont: function(frames){ if(P.spont) spontNext = spontTick + Math.max(1, frames); },
       get avgNbr(){ return avgNbr; },
       get W(){ return W; },
       get H(){ return H; },
@@ -903,11 +912,12 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       wSep:1.5, wAli:1.0, wCoh:1.0,
       n:500, speed:3.5, force:0.1,
       k:7, radius:40, sepDist:15,
-      mode:'radius', align:'inertial', chi:10, eta:0.4,
+      mode:'knn', align:'inertial', chi:10, eta:0.4,
       pred:false, wFlee:3, predR:150, predSpeed:1.3,
       roost:false, wRoost:1, roostR:150,
       birdSize:1.5, alignedStart:true,
-      spont:false, spontEvery:6, spontN:10, spontAngle:90
+      spont:true, spontEvery:6, spontN:10, spontAngle:90,
+      alSep:1.5, alAli:1.5, alCoh:0.5
     };
     // 활동 구역: 타원체 반지름 (x, y=높이, z)
     var RA = 520, RB = 260, RC = 420;
@@ -926,7 +936,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     var avgNbr = 0, pol = 0;
 
     /* ---- 포식자 ---- */
-    var PRED_TURN = 0.05, PRED_CATCH = 10, PRED_REST = 90, PRED_TIMEOUT = 240;
+    var PRED_TURN = 0.09, PRED_CATCH = 10, PRED_RETARGET = 1800, MIN_ALIVE = 20;   // 30초 동안 못 잡으면 가장 가까운 새로 목표를 바꾼다, 새가 20마리 남으면 더 잡지 않는다
     var pred = {x:0, y:0, z:0, vx:0, vy:0, vz:0, state:'hunt', t:0, target:-1, hits:0, wallHits:0};
 
     function resetPred(){
@@ -935,38 +945,43 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       pred.state = 'hunt'; pred.t = 0; pred.target = -1; pred.hits = 0; pred.wallHits = 0;
     }
 
+    // 포식자에게 잡힌 새를 무리에서 뺀다(마지막 새를 그 자리로 옮긴다)
+    function removeBird(i){
+      var last = count - 1;
+      if(i !== last){
+        x[i] = x[last]; y[i] = y[last]; z[i] = z[last];
+        vx[i] = vx[last]; vy[i] = vy[last]; vz[i] = vz[last];
+        spx[i] = spx[last]; spy[i] = spy[last]; spz[i] = spz[last];
+        tCnt[i] = tCnt[last]; tWait[i] = tWait[last]; tDir[i] = tDir[last];
+      }
+      count = last;
+    }
+
     function updatePredator(n){
       if(!P.pred || n < 1) return;
       var ps = P.speed * P.predSpeed;
       var has = false, dsx = 0, dsy = 0, dsz = 0;
       pred.t++;
-      if(pred.state === 'hunt'){
-        if(pred.target < 0 || pred.target >= n){
-          var bd = 1e18, bi = 0;
-          for(var i = 0; i < n; i++){
-            var ex = x[i] - pred.x, ey = y[i] - pred.y, ez = z[i] - pred.z;
-            var ed = ex * ex + ey * ey + ez * ez;
-            if(ed < bd){ bd = ed; bi = i; }
-          }
-          pred.target = bi; pred.t = 0;
+      // 잡을 때까지 쫓아가고 물러서지 않는다. 잡으면 그 새는 무리에서 빠지고, 바로 다음으로 가까운 새를 쫓는다.
+      if(pred.target < 0 || pred.target >= n || pred.t > PRED_RETARGET){
+        var bd = 1e18, bi = 0;
+        for(var i = 0; i < n; i++){
+          var ex = x[i] - pred.x, ey = y[i] - pred.y, ez = z[i] - pred.z;
+          var ed = ex * ex + ey * ey + ez * ez;
+          if(ed < bd){ bd = ed; bi = i; }
         }
-        var tg = pred.target;
-        var dx = x[tg] - pred.x, dy = y[tg] - pred.y, dz = z[tg] - pred.z;
-        var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if(d < PRED_CATCH){ pred.hits++; pred.state = 'rest'; pred.t = 0; pred.target = -1; }
-        else if(pred.t > PRED_TIMEOUT){ pred.state = 'rest'; pred.t = 0; pred.target = -1; }
-        else {
-          var lead = Math.min(30, d / ps);
-          dsx = x[tg] + vx[tg] * lead - pred.x;
-          dsy = y[tg] + vy[tg] * lead - pred.y;
-          dsz = z[tg] + vz[tg] * lead - pred.z;
-          has = true;
-        }
+        pred.target = bi; pred.t = 0;
+      }
+      var tg = pred.target;
+      var dx = x[tg] - pred.x, dy = y[tg] - pred.y, dz = z[tg] - pred.z;
+      var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if(d < PRED_CATCH && n > MIN_ALIVE){
+        removeBird(tg); pred.hits++; pred.target = -1; pred.t = 0;
       } else {
-        if(pred.t > PRED_REST){ pred.state = 'hunt'; pred.t = 0; pred.target = -1; }
-        var mx = 0, my = 0, mz = 0;
-        for(var q = 0; q < n; q++){ mx += x[q]; my += y[q]; mz += z[q]; }
-        dsx = pred.x - mx / n; dsy = pred.y - my / n; dsz = pred.z - mz / n;
+        var lead = Math.min(30, d / ps);
+        dsx = x[tg] + vx[tg] * lead - pred.x;
+        dsy = y[tg] + vy[tg] * lead - pred.y;
+        dsz = z[tg] + vz[tg] * lead - pred.z;
         has = true;
       }
       var hl = Math.sqrt(pred.vx * pred.vx + pred.vy * pred.vy + pred.vz * pred.vz) || 1;
@@ -1167,7 +1182,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       }
       mx /= n; mz /= n;
       var sl = Math.sqrt(su * su + sw * sw);
-      if(sl / n < 0.3) return;                            // 방향이 제각각이면 시작하지 않는다
+      if(sl / n < 0.3){ spontNext = spontTick + 60; return; }   // 방향이 제각각이면 시작하지 않고 1초 뒤에 다시 시도한다
       var hu = su / sl, hw = sw / sl;                     // 위에서 본 평면(u=x, w=-z)에서 무리의 평균 진행 방향
       // 옆쪽 위치 s: 진행 방향의 오른쪽이 +, 왼쪽이 −
       for(i = 0; i < n; i++) sVal[i] = (x[i] - mx) * hw + (z[i] - mz) * hu;
@@ -1205,6 +1220,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       spontTrigger(n);
       var actNext = 0;
       updatePredator(n);
+      n = count;                 // 잡힌 새가 빠졌을 수 있다
       var R2 = P.radius * P.radius;
       var sd2 = P.sepDist * P.sepDist;
       var maxS = P.speed, minS = P.speed * 0.5, maxF = P.force;
@@ -1225,6 +1241,12 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           if(tWait[i] === 0) tCnt[i] = TURN_DUR;
         }
 
+        // 포식자가 감지 거리 안에 있으면 분리·정렬·응집 가중치에 경계 배율을 곱한다(쫓기는 새의 행동)
+        var kS = 1, kA = 1, kC = 1;
+        if(P.pred){
+          var adx = xi - pred.x, ady = yi - pred.y, adz = zi - pred.z;
+          if(adx * adx + ady * ady + adz * adz < P.predR * P.predR){ kS = P.alSep; kA = P.alAli; kC = P.alCoh; }
+        }
         var fx = 0, fy = 0, fz = 0, tqx = 0, tqy = 0, tqz = 0;
         if(cnt > 0){
           var sx = 0, sy = 0, sz = 0, sc = 0;
@@ -1245,7 +1267,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           }
           if(sc > 0){
             steer(sx, sy, sz, vx[i], vy[i], vz[i], maxS, maxF);
-            fx += P.wSep * st[0]; fy += P.wSep * st[1]; fz += P.wSep * st[2];
+            fx += P.wSep * kS * st[0]; fy += P.wSep * kS * st[1]; fz += P.wSep * kS * st[2];
           }
           if(inertial){
             // 토크 = (자기 방향 단위벡터) × (이웃 방향 단위벡터의 평균)
@@ -1257,10 +1279,10 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
             tqz = hx * muy - hy * mux;
           } else {
             steer(ax / cnt, ay / cnt, az / cnt, vx[i], vy[i], vz[i], maxS, maxF);
-            fx += P.wAli * st[0]; fy += P.wAli * st[1]; fz += P.wAli * st[2];
+            fx += P.wAli * kA * st[0]; fy += P.wAli * kA * st[1]; fz += P.wAli * kA * st[2];
           }
           steer(cx / cnt, cy / cnt, cz / cnt, vx[i], vy[i], vz[i], maxS, maxF);
-          fx += P.wCoh * st[0]; fy += P.wCoh * st[1]; fz += P.wCoh * st[2];
+          fx += P.wCoh * kC * st[0]; fy += P.wCoh * kC * st[1]; fz += P.wCoh * kC * st[2];
         }
 
         // 포식자 회피
@@ -1313,7 +1335,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
           var s3 = tgt / sp2; tx *= s3; ty *= s3; tz *= s3;
 
           // χ·dω/dt = J·τ − η·ω  (s = χω), 각속도 크기 상한 0.35 rad/프레임
-          var J = P.wAli * 0.06, gam = P.eta / P.chi;
+          var J = P.wAli * kA * 0.06, gam = P.eta / P.chi;
           spx[i] += J * tqx - gam * spx[i];
           spy[i] += J * tqy - gam * spy[i];
           spz[i] += J * tqz - gam * spz[i];
@@ -1371,49 +1393,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     }
 
 
-    /* ---- 이탈도(dealignment): 각 새가 최근 약 1초 동안 무리 평균 방향에서 벗어난 시간의 비율 ----
-       Attanasi 등(2015)의 δ_i: C_i = (개체 방향)·(무리 평균 방향)이 중앙값보다 낮은 시간의 비율. 1초(60프레임) 지수 평균으로 계산한다. */
-    var dealign = new Float32Array(MAX), dCos = new Float32Array(MAX), trackDealign = false;
-    function meanHeading(){
-      var su = 0, sv = 0, sw = 0;
-      for(var i = 0; i < count; i++){
-        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]) || 1;
-        su += vx[i] / l; sv += vy[i] / l; sw += vz[i] / l;
-      }
-      var L = Math.sqrt(su * su + sv * sv + sw * sw) || 1;
-      return [su / L, sv / L, sw / L];
-    }
-    function updateDealign(){
-      var n = count;
-      if(n < 10) return;
-      var H = meanHeading(), i;
-      for(i = 0; i < n; i++){
-        var l = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]) || 1;
-        dCos[i] = (vx[i] * H[0] + vy[i] * H[1] + vz[i] * H[2]) / l;
-      }
-      var stride = Math.max(1, Math.floor(n / 256)), smp = [];
-      for(i = 0; i < n; i += stride) smp.push(dCos[i]);
-      smp.sort(function(a, b){ return a - b; });
-      var c0 = smp[Math.floor(smp.length / 2)];
-      for(i = 0; i < n; i++) dealign[i] += ((dCos[i] < c0 ? 1 : 0) - dealign[i]) / 60;
-    }
-    // 옆쪽 가장자리(진행 방향에 수직인 수평 방향으로 가장 바깥 10%)와 안쪽 50%의 평균 이탈도
-    function dealignStats(){
-      var n = count;
-      if(n < 20) return null;
-      var H = meanHeading(), hl = Math.sqrt(H[0] * H[0] + H[2] * H[2]) || 1, nx = H[2] / hl, nz = -H[0] / hl;
-      var mx = 0, mz = 0, i;
-      for(i = 0; i < n; i++){ mx += x[i]; mz += z[i]; }
-      mx /= n; mz /= n;
-      var ord = [];
-      for(i = 0; i < n; i++) ord.push([Math.abs((x[i] - mx) * nx + (z[i] - mz) * nz), dealign[i]]);
-      ord.sort(function(a, b){ return b[0] - a[0]; });
-      var k10 = Math.max(1, Math.floor(n * 0.1)), h = Math.floor(n * 0.5), o = 0, inn = 0;
-      for(i = 0; i < k10; i++) o += ord[i][1];
-      for(i = h; i < n; i++) inn += ord[i][1];
-      return {outer: o / k10, inner: inn / (n - h)};
-    }
-
     /* ---- 초기화, 개체 수, 표시용 ---- */
     function spawn(i){
       var px, py, pz;
@@ -1436,7 +1415,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
         vx[i] = dxr / l * s; vy[i] = dyr / l * s; vz[i] = dzr / l * s;
       }
       spx[i] = 0; spy[i] = 0; spz[i] = 0;
-      dealign[i] = 0.5;
       tCnt[i] = 0; tWait[i] = 0;
     }
     function syncCount(){
@@ -1448,7 +1426,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
 
     // 선택 개체(0번)에서 가장 가까운 7마리는 mark=1, 선택 개체는 mark=2
     function updateMarks(){
-      if(trackDealign) updateDealign();
       mark.fill(0, 0, count);
       if(turnActive > 0) for(var q = 0; q < count; q++) if(tCnt[q] > 0) mark[q] = 3;   // 전환 중인 새
       if(count < 1) return;
@@ -1492,9 +1469,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       get spontLast(){ return spontLast; },
       get turnActive(){ return turnActive; },
       forceSpont: function(){ spontNext = spontTick; },
-      dealign: dealign,
-      dealignStats: dealignStats,
-      setTrackDealign: function(v){ trackDealign = !!v; for(var i = 0; i < count; i++) dealign[i] = 0.5; },
+      scheduleSpont: function(frames){ if(P.spont) spontNext = spontTick + Math.max(1, frames); },
       get avgNbr(){ return avgNbr; },
       setCount: syncCount, reset: reset, resetPred: resetPred, step: step,
       updateMarks: updateMarks, kick: kick,
@@ -1528,11 +1503,11 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
   var DEF = {2: JSON.parse(JSON.stringify(sims[2].P)), 3: JSON.parse(JSON.stringify(sims[3].P))};
 
   // 2D와 3D가 함께 바뀌는 값. 나머지(거리와 관련된 값 등)는 보고 있는 화면에만 적용된다.
-  var SHARED = {wSep:1, wAli:1, wCoh:1, chi:1, eta:1, speed:1, n:1, predSpeed:1, k:1, mode:1, align:1, pred:1, spont:1, spontEvery:1, spontN:1, spontAngle:1};
+  var SHARED = {wSep:1, wAli:1, wCoh:1, chi:1, eta:1, speed:1, n:1, predSpeed:1, k:1, mode:1, align:1, pred:1, spont:1, spontEvery:1, spontN:1, spontAngle:1, alSep:1, alAli:1, alCoh:1};
   function setParam(key, val){
     if(SHARED[key]){ sims[2].P[key] = val; sims[3].P[key] = val; }
     else P()[key] = val;
-    if(key === 'n') cur().setCount();
+    if(key === 'n'){ cur().setCount(); if(typeof rbClear === 'function'){ rbClear(2); rbClear(3); } }
     if(typeof updateWarn === 'function' && nWarn) updateWarn();
   }
 
@@ -1567,14 +1542,16 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       desc:'새가 포식자를 알아차리는 거리입니다.'},
     {key:'predSpeed', label:'포식자 속도 (최대 속도 배율)', short:'속도 배율', group:'pred', min:1, max:1.6, step:0.05, fmt:2, pred:true,
       desc:'포식자 속도가 새의 최대 속도의 몇 배인지 정합니다.'},
+    {key:'alSep', label:'쫓길 때 분리 배율', short:'분리 배율', group:'pred', min:0, max:3, step:0.1, fmt:1, pred:true,
+      desc:'포식자가 감지 거리 안에 있을 때, 그 안에 있는 새의 분리 가중치에 곱하는 값입니다. 1보다 크면 서로 더 멀리 떨어지려 합니다.'},
+    {key:'alAli', label:'쫓길 때 정렬 배율', short:'정렬 배율', group:'pred', min:0, max:3, step:0.1, fmt:1, pred:true,
+      desc:'포식자가 감지 거리 안에 있을 때, 그 안에 있는 새의 정렬 가중치에 곱하는 값입니다. 1보다 크면 이웃과 방향을 더 세게 맞춥니다.'},
+    {key:'alCoh', label:'쫓길 때 응집 배율', short:'응집 배율', group:'pred', min:0, max:3, step:0.1, fmt:1, pred:true,
+      desc:'포식자가 감지 거리 안에 있을 때, 그 안에 있는 새의 응집 가중치에 곱하는 값입니다. 1보다 작으면 무리가 덜 뭉치고 퍼집니다.'},
     {key:'spontEvery', label:'자발적 전환의 평균 간격 (초)', short:'평균 간격(초)', group:'turn', min:2, max:60, step:1, fmt:0, spont:true,
       desc:'전환이 시작되는 평균 간격입니다. 시작 시각은 무작위이며, 무리가 정렬되어 있을 때만 시작합니다. 한 전환이 끝나기 전에는 새 전환이 시작되지 않습니다.'},
     {key:'spontAngle', label:'자발적 전환의 각도 (도)', short:'전환 각도(°)', group:'turn', min:20, max:180, step:5, fmt:0, spont:true,
       desc:'한 번의 전환에서 무리가 도는 각도의 기준입니다. 실제 각도는 이 값의 70~130% 사이에서 무작위로 정해집니다.'},
-    {key:'wRoost', label:'중심점 유인 세기 (유인 가중치)', short:'유인 세기', group:'d3', min:0, max:4, step:0.1, fmt:1, dim3:true, roost:true,
-      desc:'3D 전용. 중심점으로 되돌아가려는 힘의 세기입니다.'},
-    {key:'roostR', label:'유인 시작 거리', short:'유인 거리', group:'d3', min:0, max:400, step:10, fmt:0, dim3:true, roost:true,
-      desc:'3D 전용. 중심점에서 이 거리보다 멀어지면 중심점 쪽으로 끌리기 시작합니다.'},
     {key:'birdSize', label:'새 크기', short:'새 크기', group:'d3', min:0.5, max:4, step:0.1, fmt:1, dim3:true,
       desc:'3D 전용. 화면에 그리는 새의 크기입니다. 움직임에는 영향이 없습니다.'},
     {key:'n', label:'개체 수', short:'개체 수 (10–10000)', group:'sel', min:10, max:10000, step:10, fmt:0, integer:true,
@@ -1690,7 +1667,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     var p = P();
     CFG.forEach(function(c){
       var hide = (c.only && c.only !== p.mode) || (c.align && c.align !== p.align) ||
-                 (c.pred && !p.pred) || (c.spont && !p.spont) || (c.roost && !p.roost) || (c.dim3 && dim !== 3);
+                 (c.pred && !p.pred) || (c.spont && !p.spont) || (c.dim3 && dim !== 3);
       ctl[c.key].wrap.classList.toggle('hidden', !!hide);
     });
     GROUPS.forEach(function(g){
@@ -1748,21 +1725,9 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
   });
   var spontOn = document.getElementById('spontOn');
   spontOn.addEventListener('change', function(){ setParam('spont', spontOn.checked); updateVisibility(); });
-  document.getElementById('roostOn').addEventListener('change', function(e){
-    sims[3].P.roost = e.target.checked; updateVisibility();
-  });
-  document.getElementById('alignedStart').addEventListener('change', function(e){
-    sims[3].P.alignedStart = e.target.checked;
-  });
   var autoRot = false, follow = true;
-  var view = {shadow:true, perf:false, dealign:false};   // 표시 옵션
+  var view = {shadow:true, perf:false};   // 표시 옵션
   document.getElementById('shadowOn').addEventListener('change', function(e){ view.shadow = e.target.checked; });
-  document.getElementById('dealignOn').addEventListener('change', function(e){
-    view.dealign = e.target.checked;
-    sims[2].setTrackDealign(view.dealign); sims[3].setTrackDealign(view.dealign);
-    document.getElementById('dealignBox').hidden = !view.dealign;
-    if(typeof dAvg !== 'undefined'){ dAvg.o = null; dAvg.i = null; }
-  });
   document.getElementById('perfOn').addEventListener('change', function(e){ view.perf = e.target.checked; applyPerf(); if(typeof updateWarn === 'function' && nWarn) updateWarn(); });
   document.getElementById('autoRot').addEventListener('change', function(e){ autoRot = e.target.checked; });
   document.getElementById('follow').addEventListener('change', function(e){ follow = e.target.checked; });
@@ -1990,7 +1955,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     T = {renderer:renderer, scene:scene, camera:camera, mesh:mesh, shadowMesh:shadowMesh, groundMesh:groundMesh, groundY:groundY,
          predMesh:predMesh, predSphere:predSphere,
          roostMesh:roostMesh, roostLine:roostLine, grid:null, gridKey:'',
-         colBird:new THREE.Color('#1b2230'), colFocal:new THREE.Color(FOCAL_COLOR), colNear:new THREE.Color(NEAR_COLOR), colHot:new THREE.Color('#1e9e6a'), colTurn:new THREE.Color('#f0b429'),
+         colBird:new THREE.Color('#1b2230'), colFocal:new THREE.Color(FOCAL_COLOR), colNear:new THREE.Color(NEAR_COLOR), colTurn:new THREE.Color('#f0b429'),
          colorState:new Uint8Array(sim.MAX).fill(255), forceRecolor:true,
          cam:{az:0.7, el:0.26, dist:720, tx:0, ty:0, tz:0}, centroid:{x:0, y:0, z:0}};
 
@@ -2101,8 +2066,8 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       T.scene.add(T.grid);
     }
   }
-  function updateInstances3(){
-    var sim = sims[3], n = sim.count, mesh = T.mesh;
+  function updateInstances3(simArg){
+    var sim = simArg || sims[3], n = sim.count, mesh = T.mesh;
     mesh.count = n;
     var arr = mesh.instanceMatrix.array;
     var sh = view.shadow && !view.perf, sarr = T.shadowMesh.instanceMatrix.array, GY = T.groundY + 0.6;
@@ -2110,7 +2075,6 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     T.shadowMesh.count = n;
     var X = sim.x, Y = sim.y, Z = sim.z, VX = sim.vx, VY = sim.vy, VZ = sim.vz, M = sim.mark;
     var size = sim.P.birdSize, colorChanged = false, sumX = 0, sumY = 0, sumZ = 0;
-    var useD = view.dealign, dA = sim.dealign, ca = mesh.instanceColor ? mesh.instanceColor.array : null, HOT = T.colHot;
     for(var i = 0; i < n; i++){
       sumX += X[i]; sumY += Y[i]; sumZ += Z[i];
       var vx = VX[i], vy = VY[i], vz = VZ[i];
@@ -2133,13 +2097,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
         sarr[o + 8] = fx * s; sarr[o + 9] = 0; sarr[o + 10] = fz * s; sarr[o + 11] = 0;
         sarr[o + 12] = X[i]; sarr[o + 13] = GY; sarr[o + 14] = Z[i]; sarr[o + 15] = 1;
       }
-      if(useD && ca){
-        // 이탈도 색: 안쪽 새(약 0.4)는 원래 색, 자주 벗어나는 새(0.8 이상)는 초록
-        var td = (dA[i] - 0.4) * 2.5; td = td < 0 ? 0 : (td > 1 ? 1 : td);
-        var bc = mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : T.colBird)), tt = mk === 0 ? td : 0;
-        ca[3 * i] = bc.r + (HOT.r - bc.r) * tt; ca[3 * i + 1] = bc.g + (HOT.g - bc.g) * tt; ca[3 * i + 2] = bc.b + (HOT.b - bc.b) * tt;
-        T.colorState[i] = 254; colorChanged = true;
-      } else if(T.forceRecolor || T.colorState[i] !== mk){
+      if(T.forceRecolor || T.colorState[i] !== mk){
         T.colorState[i] = mk;
         mesh.setColorAt(i, mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : T.colBird)));
         colorChanged = true;
@@ -2171,12 +2129,11 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       T.predSphere.scale.set(sim.P.predR, sim.P.predR, sim.P.predR);
     }
   }
-  function updateInstances2(){
-    var sim = sims[2], S = T.s2, n = sim.count, mesh = S.mesh;
+  function updateInstances2(simArg){
+    var sim = simArg || sims[2], S = T.s2, n = sim.count, mesh = S.mesh;
     mesh.count = n;
     var arr = mesh.instanceMatrix.array;
     var X = sim.x, Y = sim.y, VX = sim.vx, VY = sim.vy, M = sim.mark, changed = false;
-    var useD = view.dealign, dA = sim.dealign, ca = mesh.instanceColor ? mesh.instanceColor.array : null, HOT = T.colHot;
     for(var i = 0; i < n; i++){
       var vx = VX[i], vy = VY[i];
       var l = Math.sqrt(vx * vx + vy * vy) || 1;
@@ -2187,12 +2144,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       arr[o + 4] = -s * sc; arr[o + 5] = c * sc; arr[o + 6] = 0; arr[o + 7] = 0;
       arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = 1; arr[o + 11] = 0;
       arr[o + 12] = X[i]; arr[o + 13] = Y[i]; arr[o + 14] = 0; arr[o + 15] = 1;
-      if(useD && ca){
-        var td = (dA[i] - 0.4) * 2.5; td = td < 0 ? 0 : (td > 1 ? 1 : td);
-        var bc = mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : S.colBird)), tt = mk === 0 ? td : 0;
-        ca[3 * i] = bc.r + (HOT.r - bc.r) * tt; ca[3 * i + 1] = bc.g + (HOT.g - bc.g) * tt; ca[3 * i + 2] = bc.b + (HOT.b - bc.b) * tt;
-        S.colorState[i] = 254; changed = true;
-      } else if(S.forceRecolor || S.colorState[i] !== mk){
+      if(S.forceRecolor || S.colorState[i] !== mk){
         S.colorState[i] = mk;
         mesh.setColorAt(i, mk === 2 ? T.colFocal : (mk === 1 ? T.colNear : (mk === 3 ? T.colTurn : S.colBird)));
         changed = true;
@@ -2215,14 +2167,14 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       S.ring.scale.set(sim.P.predR, sim.P.predR, 1);
     }
   }
-  function render2gl(){
+  function render2gl(simArg){
     if(!T) return;
-    updateInstances2();
+    updateInstances2(simArg);
     T.renderer.render(T.s2.scene, T.s2.camera);
   }
-  function render3(){
+  function render3(simArg){
     if(!T) return;
-    updateInstances3();
+    updateInstances3(simArg);
     var cam = T.cam, c = T.centroid;
     if(autoRot) cam.az += 0.003;
     // 카메라 목표점: 무리 중심을 향해 부드럽게 이동, 끄면 구역 중심으로 이동
@@ -2242,13 +2194,17 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     document.body.setAttribute('data-dim', String(d));
     var sim = cur();
     if(d === 3){ initThree(); showFailIfNeeded(); }
+    var cntBefore = sim.count;
     sim.setCount();
+    if(sim.count !== cntBefore) rbClear(d);
     if(P().pred) sim.resetPred();
     refreshControls();
     updateVisibility();
     updateWarn();
     onResize();
     if(T){ T.forceRecolor = true; T.s2.forceRecolor = true; }
+    rp.playing = false; rp.t = rpDur();
+    updateReplayUI();
   }
   Array.prototype.forEach.call(document.querySelectorAll('input[name=dim]'), function(r){
     r.addEventListener('change', function(){ if(r.checked) setDim(parseInt(r.value, 10)); });
@@ -2266,17 +2222,22 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
   pauseBtn.addEventListener('click', function(){
     paused = !paused;
     pauseBtn.textContent = paused ? '재생' : '일시정지';
+    if(paused) replayFinalize(dim, cur());          // 멈춘 순간의 상태까지 저장해 둔다
+    rp.playing = false; rp.exporting = false;
+    rp.t = paused ? rpDur() : 0;
+    updateReplayUI();
   });
   document.getElementById('reset').addEventListener('click', function(){
     cur().reset();
+    rbClear(dim);
+    rp.playing = false; rp.t = 0;
+    updateReplayUI();
     if(T){ T.forceRecolor = true; T.s2.forceRecolor = true; }
   });
   document.getElementById('kickL').addEventListener('click', function(){ cur().kick(-1); });
   document.getElementById('kickR').addEventListener('click', function(){ cur().kick(1); });
-  var polEl = document.getElementById('pol'), nbrEl = document.getElementById('nbr'), hitsEl = document.getElementById('hits');
+  var polEl = document.getElementById('pol'), nbrEl = document.getElementById('nbr'), hitsEl = document.getElementById('hits'), aliveEl = document.getElementById('alive'), lastHits = -1, lastAlive = -1;
   var fpsEl = document.getElementById('fps'), nWarn = document.getElementById('nWarn');
-  var dealignOuterEl = document.getElementById('dealignOuter'), dealignInnerEl = document.getElementById('dealignInner');
-  var dAvg = {o: null, i: null};
   var lastT = performance.now(), fpsFrames = 0;
   // 개체 수가 많을 때 느려질 수 있다는 안내
   var lowFps = false, lastFps = 0;
@@ -2295,13 +2256,240 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
     nWarn.hidden = !msg;
   }
 
+  /* --- 다시 보기: 새가 움직이는 동안 최근 10초를 저장해 두었다가, 일시정지하면 느리게 다시 볼 수 있다 ---
+     30프레임/초로 저장하고(최대 10초), 다시 볼 때는 프레임 사이를 보간해 부드럽게 보여 준다.
+     일시정지한 뒤에는 시뮬레이션을 계산하지 않는다. 화면(2D/3D)마다 따로 저장한다. */
+  var RP_HZ = 30, RP_SEC = 10, RP_CAP = RP_HZ * RP_SEC + 1;
+  var rb = {2: null, 3: null}, rpFrame = {2: 0, 3: 0}, rv = {2: null, 3: null};
+  var rp = {t: 0, playing: false, last: 0, speed: 0.25, exporting: false, exportedFlag: false};
+  var rpBar = document.getElementById('replayBar'), rpPlay = document.getElementById('rpPlay'), rpSlider = document.getElementById('rpSlider');
+  var rpTime = document.getElementById('rpTime'), rpSpeed = document.getElementById('rpSpeed');
+  var rpExport = document.getElementById('rpExport'), rpDl = document.getElementById('rpDl');
+  function rbNew(d, n){
+    var comps = d === 3 ? 6 : 4;
+    return {d: d, n: n, comps: comps, pos: new Float32Array(RP_CAP * n * comps), mark: new Uint8Array(RP_CAP * n),
+            cnt: new Int32Array(RP_CAP), pr: new Float32Array(RP_CAP * 7), info: new Float32Array(RP_CAP * 4), head: 0, len: 0};
+  }
+  function rbClear(d){ rb[d] = null; rpFrame[d] = 0; }
+  function rbWrite(R, sim){
+    var n = sim.count, slot = (R.head + R.len) % RP_CAP;
+    if(R.len < RP_CAP) R.len++; else R.head = (R.head + 1) % RP_CAP;
+    var base = slot * R.n * R.comps, N = R.n, pos = R.pos;
+    pos.set(sim.x.subarray(0, n), base); pos.set(sim.y.subarray(0, n), base + N);
+    if(R.d === 3){
+      pos.set(sim.z.subarray(0, n), base + 2 * N); pos.set(sim.vx.subarray(0, n), base + 3 * N);
+      pos.set(sim.vy.subarray(0, n), base + 4 * N); pos.set(sim.vz.subarray(0, n), base + 5 * N);
+    } else {
+      pos.set(sim.vx.subarray(0, n), base + 2 * N); pos.set(sim.vy.subarray(0, n), base + 3 * N);
+    }
+    R.mark.set(sim.mark.subarray(0, n), slot * N);
+    R.cnt[slot] = n;
+    var pr = sim.pred, o = slot * 7;
+    R.pr[o] = sim.P.pred ? 1 : 0; R.pr[o + 1] = pr.x; R.pr[o + 2] = pr.y; R.pr[o + 3] = R.d === 3 ? pr.z : 0;
+    R.pr[o + 4] = pr.vx; R.pr[o + 5] = pr.vy; R.pr[o + 6] = R.d === 3 ? pr.vz : 0;
+    o = slot * 4; R.info[o] = sim.pol; R.info[o + 1] = sim.avgNbr; R.info[o + 2] = pr.hits; R.info[o + 3] = n;
+  }
+  function replayPush(d, sim){
+    var R = rb[d];
+    if(!R || sim.count > R.n){ R = rb[d] = rbNew(d, Math.max(sim.count, 1)); rpFrame[d] = 0; }   // 개체 수가 늘면 새로 시작한다
+    rpFrame[d]++;
+    if(rpFrame[d] % 2 !== 0) return;
+    rbWrite(R, sim);
+  }
+  function replayFinalize(d, sim){
+    var R = rb[d];
+    if(R && rpFrame[d] % 2 !== 0) rbWrite(R, sim);     // 마지막 프레임이 저장되지 않았다면 지금 상태를 저장한다
+  }
+  function rpDur(){ var R = rb[dim]; return (R && R.len > 1) ? (R.len - 1) / RP_HZ : 0; }
+  function makeView(d, cap){
+    return {cap: cap, count: 0, x: new Float32Array(cap), y: new Float32Array(cap), z: new Float32Array(cap),
+            vx: new Float32Array(cap), vy: new Float32Array(cap), vz: new Float32Array(cap), mark: new Uint8Array(cap),
+            P: {birdSize: 1.5, roost: false, pred: false, predR: 120}, pred: {x: 0, y: 0, z: 0, vx: 1, vy: 0, vz: 0},
+            info: {pol: 0, nbr: 0, hits: 0, count: 0}};
+  }
+  // t초 시점의 화면(저장된 두 프레임 사이를 보간). 개체 수가 달라지는 순간(포식자가 잡은 순간)은 보간하지 않는다.
+  function replayView(d, t){
+    var R = rb[d];
+    if(!R || R.len < 2) return null;
+    var f = t * RP_HZ, k = Math.floor(f);
+    if(k > R.len - 2) k = R.len - 2; if(k < 0) k = 0;
+    var u = f - k; if(u < 0) u = 0; if(u > 1) u = 1;
+    var sA = (R.head + k) % RP_CAP, sB = (R.head + k + 1) % RP_CAP, nA = R.cnt[sA];
+    if(R.cnt[sB] !== nA) u = 0;
+    var V = rv[d];
+    if(!V || V.cap < R.n) V = rv[d] = makeView(d, R.n);
+    var N = R.n, cm = R.comps, pos = R.pos, bA = sA * N * cm, bB = sB * N * cm, i, a;
+    var dst = d === 3 ? [V.x, V.y, V.z, V.vx, V.vy, V.vz] : [V.x, V.y, V.vx, V.vy];
+    for(var c = 0; c < cm; c++){
+      var D = dst[c], oA = bA + c * N, oB = bB + c * N;
+      for(i = 0; i < nA; i++){ a = pos[oA + i]; D[i] = a + (pos[oB + i] - a) * u; }
+    }
+    V.count = nA;
+    V.mark.set(R.mark.subarray(sA * N, sA * N + nA));
+    var P0 = cur().P, on = R.pr[sA * 7] > 0.5;
+    V.P.birdSize = P0.birdSize; V.P.predR = P0.predR; V.P.pred = on;
+    if(on){
+      var oa = sA * 7, ob = sB * 7, pr = V.pred;
+      pr.x = R.pr[oa + 1] + (R.pr[ob + 1] - R.pr[oa + 1]) * u; pr.y = R.pr[oa + 2] + (R.pr[ob + 2] - R.pr[oa + 2]) * u; pr.z = R.pr[oa + 3] + (R.pr[ob + 3] - R.pr[oa + 3]) * u;
+      pr.vx = R.pr[oa + 4] + (R.pr[ob + 4] - R.pr[oa + 4]) * u; pr.vy = R.pr[oa + 5] + (R.pr[ob + 5] - R.pr[oa + 5]) * u; pr.vz = R.pr[oa + 6] + (R.pr[ob + 6] - R.pr[oa + 6]) * u;
+    }
+    var io = (u < 0.5 ? sA : sB) * 4;
+    V.info.pol = R.info[io]; V.info.nbr = R.info[io + 1]; V.info.hits = R.info[io + 2]; V.info.count = R.info[io + 3];
+    return V;
+  }
+  function rpSyncUI(){
+    var d = rpDur();
+    rpSlider.value = d > 0 ? Math.round(rp.t / d * 1000) : 0;
+    rpTime.textContent = rp.t.toFixed(1) + ' / ' + d.toFixed(1) + '초';
+    rpPlay.textContent = rp.playing ? '❚❚' : '▶';
+    rpExport.textContent = rp.exporting ? '영상 만드는 중…' : '영상으로 만들기';
+  }
+  function updateReplayUI(){
+    var show = paused && !!T;
+    rpBar.hidden = !show;
+    if(!show){ rp.playing = false; return; }
+    var ok = rpDur() > 0;
+    rpPlay.disabled = rpSlider.disabled = !ok;
+    rpExport.disabled = !ok || rp.exporting;
+    rpSpeed.disabled = rp.exporting;
+    if(!rp.exporting && !(rec.blob && rp.exportedFlag)) rpDl.hidden = true;
+    if(!ok){ rpTime.textContent = '저장된 화면이 없습니다'; rpPlay.textContent = '▶'; return; }
+    rpSyncUI();
+  }
+  rpPlay.addEventListener('click', function(){
+    if(rp.playing){ rp.playing = false; }
+    else { var d = rpDur(); if(rp.t >= d - 0.02) rp.t = 0; rp.playing = true; rp.last = performance.now(); }
+    rpSyncUI();
+  });
+  rpSlider.addEventListener('input', function(){ rp.playing = false; rp.t = rpSlider.value / 1000 * rpDur(); rpSyncUI(); });
+  rpSpeed.addEventListener('change', function(){ rp.speed = parseFloat(rpSpeed.value); });
+  // 선택한 속도로 처음부터 한 번 재생하면서 녹화해 영상 파일로 만든다
+  rpExport.addEventListener('click', function(){
+    if(rp.exporting || (rec.mr && rec.mr.state === 'recording') || rpDur() <= 0) return;
+    rp.t = 0; rp.playing = true; rp.last = performance.now(); rp.exporting = true; rp.exportedFlag = true; rpDl.hidden = true;
+    startRec({noSpont: true});
+    if(!(rec.mr && rec.mr.state === 'recording')){ rp.exporting = false; rp.exportedFlag = false; rp.playing = false; }
+    updateReplayUI();
+  });
+  rpDl.addEventListener('click', function(){ saveRec(); });
+
+  /* --- 녹화 (화면의 시뮬레이션 캔버스를 영상 파일로 저장) --- */
+  var recBtn = document.getElementById('rec'), recSaveBtn = document.getElementById('recSave'), recNote = document.getElementById('recNote');
+  var recSpontOpt = document.getElementById('recSpont'), recLenSel = document.getElementById('recLen');
+  var rec = {mr: null, chunks: [], t0: 0, timer: null, auto: null, blob: null, ext: 'webm', spontWas: null, secs: 0};
+  function recNoteSet(t){ recNote.textContent = t || ''; recNote.hidden = !t; }
+  function recCanvas(){ return T ? T.renderer.domElement : document.getElementById('c2'); }
+  function recMime(){
+    // H.264 mp4를 우선한다(맥 등에서 바로 재생됨). 지원하지 않으면 webm, 그것도 안 되면 브라우저 기본 mp4
+    var c = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+    for(var i = 0; i < c.length; i++){ try{ if(MediaRecorder.isTypeSupported(c[i])) return c[i]; }catch(e){} }
+    return '';
+  }
+  function mmss(ms){ var s = Math.floor(ms / 1000), m = Math.floor(s / 60); s = s % 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+  function recLabel(){ recBtn.textContent = '■ 정지 ' + mmss(performance.now() - rec.t0); }
+  function stamp(){
+    var d = new Date(), z = function(v){ return (v < 10 ? '0' : '') + v; };
+    return d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '_' + z(d.getHours()) + z(d.getMinutes()) + z(d.getSeconds());
+  }
+  // 녹화하는 동안 자발적 전환이 반드시 들어가게 한다: 꺼져 있으면 켜고, 녹화 시작 3초 뒤에 첫 전환을 예약한다
+  function recSpontOn(){
+    rec.spontWas = null;
+    if(!recSpontOpt.checked) return;
+    if(!sims[2].P.spont){ rec.spontWas = false; setParam('spont', true); spontOn.checked = true; updateVisibility(); }
+    sims[2].scheduleSpont(180); sims[3].scheduleSpont(180);
+  }
+  function recSpontRestore(){
+    if(rec.spontWas === false){ setParam('spont', false); spontOn.checked = false; updateVisibility(); }
+    rec.spontWas = null;
+  }
+  function startRec(opts){
+    if(typeof MediaRecorder === 'undefined'){ recNoteSet('이 브라우저는 녹화를 지원하지 않습니다.'); return; }
+    var cv = recCanvas();
+    if(!cv || !cv.captureStream){ recNoteSet('이 화면은 녹화를 지원하지 않습니다.'); return; }
+    var mime = recMime(), stream, mr;
+    try{
+      stream = cv.captureStream(60);
+      var opts = {videoBitsPerSecond: 8000000};
+      if(mime) opts.mimeType = mime;
+      mr = new MediaRecorder(stream, opts);
+    }catch(e){ recNoteSet('녹화를 시작하지 못했습니다: ' + (e && e.message ? e.message : e)); return; }
+    rec.mr = mr; rec.chunks = []; rec.blob = null; rec.ext = /mp4/.test(mime) ? 'mp4' : 'webm';
+    recSaveBtn.hidden = true;
+    mr.ondataavailable = function(e){ if(e.data && e.data.size) rec.chunks.push(e.data); };
+    mr.onstop = function(){
+      clearInterval(rec.timer); clearTimeout(rec.auto);
+      stream.getTracks().forEach(function(t){ t.stop(); });
+      rec.secs = Math.round((performance.now() - rec.t0) / 1000);
+      recBtn.classList.remove('on'); recBtn.textContent = '● 녹화';
+      recSpontRestore();
+      // 실제로 만들어진 형식으로 파일 확장자를 정한다
+      var realType = mr.mimeType || (rec.ext === 'mp4' ? 'video/mp4' : 'video/webm');
+      rec.ext = /mp4/.test(realType) ? 'mp4' : 'webm';
+      var blob = new Blob(rec.chunks, {type: realType});
+      if(blob.size === 0){ recNoteSet('녹화된 내용이 없습니다.'); return; }
+      rec.blob = blob;
+      recSaveBtn.textContent = '녹화 저장 (' + rec.secs + '초, ' + (blob.size / 1048576).toFixed(1) + 'MB)';
+      recSaveBtn.hidden = false;
+      recNoteSet('녹화가 끝났습니다. "녹화 저장"을 눌러 ' + rec.ext + ' 파일로 받으세요.');
+      if(rp.exportedFlag){ rpDl.textContent = '영상 저장 (' + (blob.size / 1048576).toFixed(1) + 'MB)'; rpDl.hidden = false; rpExport.disabled = false; rpSyncUI(); }
+    };
+    if(opts && opts.noSpont) rec.spontWas = null; else recSpontOn();
+    rec.t0 = performance.now();
+    mr.start(1000);
+    recBtn.classList.add('on'); recLabel();
+    rec.timer = setInterval(recLabel, 500);
+    var len = parseInt(recLenSel.value, 10);
+    if(len > 0) rec.auto = setTimeout(stopRec, len * 1000);
+    recNoteSet('녹화 중입니다. 캔버스(시뮬레이션 화면)만 녹화되며, 창 크기를 바꾸면 영상 크기도 바뀔 수 있습니다.');
+  }
+  function stopRec(){ if(rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); }
+  function saveRec(){
+    if(!rec.blob) return;
+    var name = 'boids_' + stamp() + '.' + rec.ext;
+    var dl = (window.claude && typeof window.claude.use === 'function') ? window.claude.use('downloads') : Promise.resolve(null);
+    dl.then(function(d){
+      if(d){
+        // claude.ai에 게시된 페이지: 뷰어에게 저장 여부를 묻는 방식
+        return d.save({filename: name, data: rec.blob}).then(
+          function(){ recNoteSet('저장했습니다: ' + name); },
+          function(err){ recNoteSet(err && err.code === 'declined' ? '저장을 취소했습니다.' : '저장하지 못했습니다(' + ((err && (err.code || err.message)) || '알 수 없는 오류') + ').'); });
+      }
+      // 일반 웹페이지(GitHub Pages 등, 파일로 연 경우): 브라우저 다운로드
+      var url = URL.createObjectURL(rec.blob), a = document.createElement('a');
+      a.href = url; a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+      recNoteSet('저장했습니다: ' + name);
+    });
+  }
+  if(typeof MediaRecorder === 'undefined'){ recBtn.disabled = true; recBtn.title = '이 브라우저는 녹화를 지원하지 않습니다'; }
+  recBtn.addEventListener('click', function(){ if(rec.mr && rec.mr.state === 'recording') stopRec(); else startRec(); });
+  recSaveBtn.addEventListener('click', saveRec);
+
   function loop(){
-    var sim = cur();
-    if(!paused) sim.step();
-    sim.updateMarks();
+    var sim = cur(), rview = null;
+    if(!paused){
+      sim.step();
+      sim.updateMarks();
+      replayPush(dim, sim);
+    } else {
+      sim.updateMarks();
+      if(T && !rpBar.hidden){
+        var dur = rpDur();
+        if(rp.playing){
+          var nowT0 = performance.now();
+          rp.t += (nowT0 - rp.last) / 1000 * rp.speed; rp.last = nowT0;
+          if(rp.t >= dur){
+            rp.t = dur; rp.playing = false;
+            if(rp.exporting){ rp.exporting = false; stopRec(); }
+          }
+          rpSyncUI();
+        }
+        if(dur > 0 && rp.t < dur - 1e-6) rview = replayView(dim, rp.t);   // 끝 지점은 실제 상태를 그대로 보여 준다
+      }
+    }
     if(frame % 20 === 0){ readTheme(); applyTheme3(); }
-    if(dim === 3) render3();
-    else if(T) render2gl();
+    if(dim === 3) render3(rview);
+    else if(T) render2gl(rview);
     else draw2();
     fpsFrames++;
     if(fpsFrames >= 30){
@@ -2312,19 +2500,19 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
       var low = lastFps < 20;
       if(low || low !== lowFps){ lowFps = low; updateWarn(); }
     }
-    if(view.dealign && frame % 10 === 0){
-      // 한 순간의 값은 흔들리므로 약 3초 이동평균으로 보인다
-      var dst = sim.dealignStats();
-      if(dst){
-        if(dAvg.o === null){ dAvg.o = dst.outer; dAvg.i = dst.inner; }
-        else { dAvg.o += (dst.outer - dAvg.o) * 0.05; dAvg.i += (dst.inner - dAvg.i) * 0.05; }
-        dealignOuterEl.textContent = dAvg.o.toFixed(2); dealignInnerEl.textContent = dAvg.i.toFixed(2);
-      }
-    }
+    if(rview){
+      // 다시 보는 동안에는 그 시점의 값을 보여 준다
+      polEl.textContent = rview.info.pol.toFixed(2); nbrEl.textContent = rview.info.nbr.toFixed(1);
+      hitsEl.textContent = rview.info.hits; aliveEl.textContent = rview.info.count;
+      lastHits = -2; lastAlive = -2;
+    } else {
+    // 잡힘·남은 새는 값이 바뀔 때 바로 갱신한다
+    if(sim.pred.hits !== lastHits){ lastHits = sim.pred.hits; hitsEl.textContent = lastHits; }
+    if(sim.count !== lastAlive){ lastAlive = sim.count; aliveEl.textContent = lastAlive; }
     if(frame % 6 === 0){
       polEl.textContent = sim.pol.toFixed(2);
       nbrEl.textContent = sim.avgNbr.toFixed(1);
-      hitsEl.textContent = sim.pred.hits;
+    }
     }
     frame++;
     requestAnimationFrame(loop);
@@ -2338,7 +2526,7 @@ code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; backgro
   initThree();                                   // 2D·3D 모두 WebGL로 그린다. 실패하면 2D는 캔버스로 그린다.
   document.body.setAttribute('data-r2', T ? 'gl' : 'canvas');
   if(T) resizeGL(); else resize2();
-  window.__boids = {view: view, sims: sims, DEF: DEF, setDim: setDim, getT: function(){ return T; }, getDim: function(){ return dim; }};
+  window.__boids = {view: view, sims: sims, DEF: DEF, setDim: setDim, getT: function(){ return T; }, getDim: function(){ return dim; }, rec: rec, rb: rb, rp: rp, replayView: replayView};
   requestAnimationFrame(loop);
 })();
 
